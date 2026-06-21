@@ -1,0 +1,6 @@
+{
+  "name": "Aegis Post-Quantum Cybersecurity Suite",
+  "description": "Advanced interactive cybersecurity dashboard and post-quantum cryptography (PQC) simulation control center, featuring automated breach response, self-healing, advanced API fuzzers, and an AI-powered cryptographic audit engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

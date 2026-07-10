@@ -92,6 +92,23 @@ const FAILURE_SCENARIOS: Scenario[] = [
       { title: "QRNG Injection", desc: "Self-healing reconfigures entropy engines, instantly blending continuous quantum random generator noise.", durationMs: 2800 },
       { title: "Module Shielding", desc: "Hardening key derivation states and recycling timing vectors using secure randomized blinders.", durationMs: 2000 }
     ]
+  },
+  {
+    id: "telstar_satcom_breach",
+    name: "Telstar 11N SatCom & GPS Telemetry Injection",
+    codename: "OP_TELSTAR_MITM",
+    targetVulnerability: "Unencrypted IPoS Gateway & GPS NMEA Spoofing",
+    vulnerabilityOverview: "Adversary exploits open ports (Telnet/HTTP) and unencrypted satellite gateways to inject fake NMEA GPS strings, overriding uplink power control signals on Telstar 11N (37.5° W) at Ottawa teleport.",
+    threatDescription: "Active signal intercept & GPS injection. Port scanner identifies vulnerability; malicious telemetry injected.",
+    defaultLegacyAlgo: "Telnet / Cleartext",
+    defaultPqcAlgo: "ML-KEM-1024",
+    logicalSteps: [
+      { title: "Ottawa Node Scan", desc: "STIA local scanner scans Ottawa telemetry sector [45.34011, -75.63116]. Detects open Telnet (Port 23) & Web GUI (Port 80).", durationMs: 2400 },
+      { title: "MitM Cleartext Intercept", desc: "Sniffing cleartext packets on IPoS link. Captures admin password 'S@tCom123!' and DNS exfiltration query to 'telemetry-upload.telstar11n.exfil.org'.", durationMs: 2800 },
+      { title: "False Telemetry Broadcast", desc: "Injecting GPS_OP_EVENT: BROADCASTING_FALSE_TELEMETRY with spoofed coordinates [45.34011, -75.63116] and setting gain to 12.5dB.", durationMs: 3000 },
+      { title: "PQC Gateway Tunneling", desc: "Aegis hot-patches link. Revokes credentials, enforces ML-KEM-1024 quantum-safe tunnels, and forces digital signature verification.", durationMs: 2800 },
+      { title: "GPS Integrity Verified", desc: "CEASED_FALSE_TELEMETRY event confirmed. Safe telemetry restored, transponder cross-pol isolation verified as secure.", durationMs: 2000 }
+    ]
   }
 ];
 
@@ -227,6 +244,13 @@ export function BreachSimulation({ onAddLog, onSetShieldHealth, onSetScenarioAct
         { qubits: "1,800 logical", ops: "Jitter alert: Out of bounds", entropy: "0.000028 bits/s", action: "Locking ephemeral state" },
         { qubits: "0 / Rotated", ops: "Seed re-spin: < 1ms", entropy: "4.821000 bits/s", action: "Blending QRNG hardware noise" },
         { qubits: "Quantum Defended", ops: "Blinded power signatures: hardened", entropy: "0.999991 bits/s", action: "Entropy restored to pristine state" }
+      ],
+      telstar_satcom_breach: [
+        { qubits: "600 logical", ops: "Port scanner complete: Port 23 warning", entropy: "0.000042 bits/s", action: "Scanning Ottawa sector Node" },
+        { qubits: "1,200 logical", ops: "Credential harvest: admin/S@tCom123!", entropy: "0.000031 bits/s", action: "Decrypting IPoS headers" },
+        { qubits: "3,200 logical", ops: "GPS_OP_EVENT: Spoofed [45.3401, -75.6312]", entropy: "0.000015 bits/s", action: "Broadcasting false telemetry" },
+        { qubits: "0 / Patched", ops: "Uplink Encapsulation: < 2.5ms", entropy: "3.840000 bits/s", action: "Deploying ML-KEM-1024 tunnel" },
+        { qubits: "Quantum Defended", ops: "Cross-Pol Isolation: 32.5 dB (Safe)", entropy: "0.999998 bits/s", action: "GPS Telemetry pristine" }
       ]
     };
 

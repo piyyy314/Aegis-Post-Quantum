@@ -104,7 +104,7 @@ export function PalantirDashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  const alertsEndRef = useRef<HTMLDivElement>(null);
+  const alertsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Establish connection to host Socket.IO server
@@ -168,8 +168,8 @@ export function PalantirDashboard() {
   }, []);
 
   useEffect(() => {
-    if (alertsEndRef.current) {
-      alertsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (alertsContainerRef.current) {
+      alertsContainerRef.current.scrollTop = alertsContainerRef.current.scrollHeight;
     }
   }, [alerts]);
 
@@ -365,8 +365,8 @@ export function PalantirDashboard() {
             </span>
           </div>
 
-          <div className="w-full h-52 select-none">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="w-full h-52 select-none min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <AreaChart data={getChartData()} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorCrit" x1="0" y1="0" x2="0" y2="1">
@@ -444,7 +444,7 @@ export function PalantirDashboard() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 space-y-1.5 font-mono text-[11px] text-slate-300 select-text">
+          <div ref={alertsContainerRef} className="flex-1 overflow-y-auto pr-2 space-y-1.5 font-mono text-[11px] text-slate-300 select-text">
             {alerts.length === 0 ? (
               <div className="text-white/20 text-center py-6 text-xs uppercase">No active socket data packets caught yet.</div>
             ) : (
@@ -466,7 +466,6 @@ export function PalantirDashboard() {
                 );
               })
             )}
-            <div ref={alertsEndRef} />
           </div>
         </div>
 

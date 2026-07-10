@@ -41,6 +41,7 @@ export interface LogEntry {
   component: string;
   message: string;
   level: "INFO" | "WARN" | "CRITICAL" | "SECURE" | "COUNTER";
+  threatType?: "classical" | "quantum" | "system";
 }
 
 export interface AuditVulnerability {

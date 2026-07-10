@@ -87,6 +87,28 @@ const sessionKeys = createAccessSessionKeys();
 export { sessionKeys };`
   },
   {
+    id: "snippet-legacy-rsa-2048",
+    label: "Legacy Asymmetric Keys (RSA-2048)",
+    code: `import crypto from 'crypto';
+
+// SENSITIVE USER SESSION KEY EXCHANGES - HARVESTING THREAT RECORDED
+// Transition recommended from RSA-2048 to ML-KEM-1024 standard
+function createSecureGatewaySession() {
+  console.log("Establishing transponder gateway keys...");
+  
+  const options = {
+    modulusLength: 2048, // Standard classical key size
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' }
+  };
+  
+  return crypto.generateKeyPairSync('rsa', options);
+}
+
+const gatewayKeys = createSecureGatewaySession();
+export { gatewayKeys };`
+  },
+  {
     id: "snippet-weak-hashing",
     label: "Weak Hash Algorithms (MD5 & SHA-1)",
     code: `import crypto from 'crypto';
@@ -136,6 +158,54 @@ export async function createQuantumSecureSession(peerPublicKey) {
     config: sessionConfig
   };
 }`
+  },
+  {
+    id: "snippet-telstar-link",
+    label: "Telstar 11N SatCom Link Budget (Python)",
+    code: `import math
+
+def calculate_link_budget():
+    # Constants
+    C = 299792458  # Speed of light (m/s)
+    K = -228.6      # Boltzmann's Constant (dBW/K-Hz)
+    
+    print("--- STIA LINK BUDGET TACTICAL UTILITY ---")
+    
+    # Inputs (Defaults set for Ku-band / Telstar 11N mission)
+    freq_ghz = 11.7  # Downlink frequency in GHz
+    dist_km = 38450  # Slant range to 37.5W from 45.34N, -75.63W
+    ant_diam = 1.2   # Antenna diameter in meters
+    ant_eff = 0.65   # Efficiency (0.6 - 0.7 typical)
+    t_sys = 150      # System Noise Temperature (Kelvin)
+    
+    # 1. Gain Calculation (dB)
+    # G = 10 * log10(eta * (pi * D / lambda)^2)
+    wavelength = C / (freq_ghz * 1e9)
+    gain_dbi = 10 * math.log10(ant_eff * ( (math.pi * ant_diam) / wavelength )**2)
+    
+    # 2. Free Space Path Loss (FSPL) Calculation (dB)
+    # FSPL = 20log10(d) + 20log10(f) + 92.45 (for km and GHz)
+    fspl = 20 * math.log10(dist_km) + 20 * math.log10(freq_ghz) + 92.45
+    
+    # 3. G/T Calculation (dB/K)
+    # G/T = Gain_dBi - 10*log10(T_sys)
+    g_over_t = gain_dbi - (10 * math.log10(t_sys))
+    
+    # Output Field Report
+    print(f"\\n[REPORT] Target: Telstar 11N")
+    print(f"Operational Frequency: {freq_ghz} GHz")
+    print(f"Calculated Antenna Gain: {gain_dbi:.2f} dBi")
+    print(f"Calculated FSPL: {fspl:.2f} dB")
+    print(f"Receiver G/T: {g_over_t:.2f} dB/K")
+    
+    return {
+        "gain": gain_dbi,
+        "fspl": fspl,
+        "g_over_t": g_over_t
+    }
+
+if __name__ == "__main__":
+    calculate_link_budget()`
   }
 ];
 

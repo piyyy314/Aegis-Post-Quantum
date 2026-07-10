@@ -18,6 +18,7 @@ export function ThreatMonitor() {
   const [scenarioProgress, setScenarioProgress] = useState(0);
   const [activeThreats, setActiveThreats] = useState<string[]>([]);
   const [shieldHealth, setShieldHealth] = useState(100);
+  const [threatFilter, setThreatFilter] = useState<"all" | "classical" | "quantum">("all");
   const [logs, setLogs] = useState<LogEntry[]>([
     {
       id: "1",
@@ -42,11 +43,11 @@ export function ThreatMonitor() {
     }
   ]);
 
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs]);
 
@@ -139,7 +140,55 @@ export function ThreatMonitor() {
     return () => clearInterval(timer);
   }, [currentScenario, selfHealingEnabled, countermeasuresArmed, deceptionTech]);
 
-  const addLog = (comp: string, msg: string, lvl: LogEntry["level"]) => {
+  const addLog = (comp: string, msg: string, lvl: LogEntry["level"], threatType?: "classical" | "quantum" | "system") => {
+    let resolvedType: "classical" | "quantum" | "system" = "system";
+
+    if (threatType) {
+      resolvedType = threatType;
+    } else {
+      const textToScan = (comp + " " + msg + " " + (currentScenario || "")).toLowerCase();
+      
+      const isQuantumText = 
+        textToScan.includes("shor") || 
+        textToScan.includes("grover") || 
+        textToScan.includes("quantum") || 
+        textToScan.includes("qubit") || 
+        textToScan.includes("lattice") || 
+        textToScan.includes("ml-kem") || 
+        textToScan.includes("ml-dsa") || 
+        textToScan.includes("falcon");
+        
+      const isClassicalText = 
+        textToScan.includes("rsa-") || 
+        textToScan.includes("rsa2048") ||
+        textToScan.includes("ecc") || 
+        textToScan.includes("p-256") || 
+        textToScan.includes("ecdsa") || 
+        textToScan.includes("sha-1") || 
+        textToScan.includes("md5") || 
+        textToScan.includes("sha1") || 
+        textToScan.includes("zero-day") || 
+        textToScan.includes("lateral") || 
+        textToScan.includes("apt") || 
+        textToScan.includes("fuzz") ||
+        textToScan.includes("exploit") ||
+        textToScan.includes("entropy_leak") ||
+        textToScan.includes("timing");
+
+      if (isQuantumText) {
+        resolvedType = "quantum";
+      } else if (isClassicalText) {
+        resolvedType = "classical";
+      } else if (currentScenario) {
+        const scenLower = currentScenario.toLowerCase();
+        if (scenLower.includes("shor") || scenLower.includes("grover") || scenLower.includes("quantum")) {
+          resolvedType = "quantum";
+        } else {
+          resolvedType = "classical";
+        }
+      }
+    }
+
     setLogs(prev => [
       ...prev,
       {
@@ -147,9 +196,26 @@ export function ThreatMonitor() {
         timestamp: new Date().toLocaleTimeString(),
         component: comp,
         message: msg,
-        level: lvl
+        level: lvl,
+        threatType: resolvedType
       }
     ].slice(-50)); // Keep last 50
+
+    // Dispatch a custom event to notify when the simulation detects a high-risk event
+    if ((comp === "BREACH-SIM" || comp === "BREACH-LAB") && (lvl === "CRITICAL" || lvl === "WARN")) {
+      window.dispatchEvent(
+        new CustomEvent("breach-simulation-alert", {
+          detail: {
+            id: Math.random().toString(),
+            component: comp,
+            message: msg,
+            level: lvl,
+            timestamp: new Date().toLocaleTimeString(),
+            threatType: resolvedType
+          }
+        })
+      );
+    }
   };
 
   const launchAttack = (type: ThreatScenarioType, name: string) => {
@@ -490,43 +556,88 @@ export function ThreatMonitor() {
 
       {/* Real-time Incident Terminal Logs */}
       <div className="border border-[#14f7ff]/20 bg-[#060a13] rounded-xl p-5 overflow-hidden flex flex-col h-[280px]">
-        <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-2.5 mb-3 gap-2">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-[#14f7ff]" />
             <span className="font-mono text-xs uppercase text-white font-bold tracking-wider">Aegis Continuous Log Terminal</span>
           </div>
-          <button 
-            onClick={() => {
-              setLogs([]);
-              addLog("TERMINAL", "Incident console outputs flushed by operator.", "INFO");
-            }}
-            className="font-mono text-[9px] text-[#14f7ff]/60 hover:text-[#14f7ff] uppercase border border-[#14f7ff]/20 hover:border-[#14f7ff]/40 py-0.5 px-2 rounded bg-transparent cursor-pointer transition-all"
-          >
-            Flush Console
-          </button>
+          
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Feed Filtering System */}
+            <div className="flex bg-[#030611] border border-white/10 rounded-md p-0.5 gap-0.5">
+              {[
+                { id: "all", label: "All Logs" },
+                { id: "classical", label: "Classical Exploits" },
+                { id: "quantum", label: "Quantum-Assisted Threats" }
+              ].map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setThreatFilter(opt.id as any)}
+                  className={`font-mono text-[9px] uppercase tracking-wider py-1 px-2.5 rounded transition-all cursor-pointer font-bold ${
+                    threatFilter === opt.id
+                      ? opt.id === "classical"
+                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/25 shadow-[0_0_8px_rgba(245,158,11,0.05)]"
+                        : opt.id === "quantum"
+                        ? "bg-pink-500/10 text-pink-400 border border-pink-500/25 shadow-[0_0_8px_rgba(239,68,68,0.05)]"
+                        : "bg-[#14f7ff]/10 text-[#14f7ff] border border-[#14f7ff]/20"
+                      : "text-white/40 hover:text-white/80 border border-transparent"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <button 
+              onClick={() => {
+                setLogs([]);
+                addLog("TERMINAL", "Incident console outputs flushed by operator.", "INFO", "system");
+              }}
+              className="font-mono text-[9px] text-[#14f7ff]/60 hover:text-[#14f7ff] uppercase border border-[#14f7ff]/20 hover:border-[#14f7ff]/40 py-1 px-2.5 rounded bg-transparent cursor-pointer transition-all shrink-0"
+              title="Flush Console"
+            >
+              Flush Console
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 space-y-1.5 font-mono text-[11px] text-slate-300 select-text">
-          {logs.map(log => {
-            const colorMap = {
-              INFO: "text-[#14f7ff]/80",
-              WARN: "text-amber-400 font-semibold",
-              CRITICAL: "text-red-400 font-bold bg-red-500/10 px-1 rounded",
-              SECURE: "text-emerald-400 py-0.5 px-0.5 rounded",
-              COUNTER: "text-fuchsia-400 font-semibold italic"
-            };
+        <div ref={logContainerRef} className="flex-1 overflow-y-auto pr-2 space-y-1.5 font-mono text-[11px] text-slate-300 select-text">
+          {logs
+            .filter(log => {
+              if (threatFilter === "all") return true;
+              if (log.threatType === "system") return true; // System diagnostic logs stay as background context
+              return log.threatType === threatFilter;
+            })
+            .map(log => {
+              const colorMap = {
+                INFO: "text-[#14f7ff]/80",
+                WARN: "text-amber-400 font-semibold",
+                CRITICAL: "text-red-400 font-bold bg-red-500/10 px-1 rounded",
+                SECURE: "text-emerald-400 py-0.5 px-0.5 rounded",
+                COUNTER: "text-fuchsia-400 font-semibold italic"
+              };
 
-            return (
-              <div key={log.id} className="flex items-start gap-2 hover:bg-white/5 p-0.5 rounded transition-all">
-                <span className="text-white/30 text-[9px] select-none shrink-0">[{log.timestamp}]</span>
-                <span className={`text-[9.5px] font-bold ${colorMap[log.level]} tracking-tight min-w-[90px] inline-block uppercase shrink-0`}>
-                  🛡️ {log.component}:
-                </span>
-                <span className="flex-1 text-[10.5px] leading-relaxed select-text">{log.message}</span>
-              </div>
-            );
-          })}
-          <div ref={logEndRef} />
+              return (
+                <div key={log.id} className="flex items-start gap-2 hover:bg-white/5 p-0.5 rounded transition-all">
+                  <span className="text-white/30 text-[9px] select-none shrink-0">[{log.timestamp}]</span>
+                  <span className={`text-[9.5px] font-bold ${colorMap[log.level]} tracking-tight min-w-[90px] inline-block uppercase shrink-0`}>
+                    🛡️ {log.component}:
+                  </span>
+                  <span className="flex-1 text-[10.5px] leading-relaxed select-text">{log.message}</span>
+                  {log.threatType && (
+                    <span className={`text-[8px] font-bold px-1 rounded uppercase tracking-wider scale-90 ${
+                      log.threatType === "classical" 
+                        ? "bg-amber-500/10 text-amber-500/80 border border-amber-500/15" 
+                        : log.threatType === "quantum" 
+                        ? "bg-pink-500/10 text-pink-500/80 border border-pink-500/15" 
+                        : "bg-blue-500/5 text-blue-400/50"
+                    }`}>
+                      {log.threatType}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
         </div>
       </div>
     </div>

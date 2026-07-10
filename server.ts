@@ -85,15 +85,41 @@ setInterval(() => {
   }
 }, 8000);
 
+const SATCOM_INTERCEPT_EVENTS = [
+  { type: "MITM_INTERCEPT", message: "PCKT_7877: TELNET CLNT -> SRV | Raw: 'show interface'", severity: "INFO" },
+  { type: "MITM_INTERCEPT", message: "PCKT_8369: IP 192.168.1.42 -> 192.168.1.100 [PROTO: PORT 23] - Unencrypted command channel active.", severity: "WARN" },
+  { type: "MITM_INTERCEPT", message: "PCKT_4672: IP 10.0.0.42 -> 192.168.1.100 [PROTO: HTTPS] - Client Hello TLSv1.3 [ENCRYPTED - NO INTERCEPT]", severity: "INFO" },
+  { type: "MITM_INTERCEPT", message: "PCKT_7542: HTTP RESP | Body: '{\"status\": \"DEGRADED\", \"modem_temp\": \"54.2 C\", \"snr\": \"9.4 dB\"}'", severity: "INFO" },
+  { type: "MITM_INTERCEPT", message: "PCKT_7774: IP 192.168.1.42 -> 192.168.1.100 [PROTO: HTTP] - GET /api/v1/system_status.json", severity: "INFO" },
+  { type: "MITM_INTERCEPT", message: "PCKT_2327: DNS Exfiltration Payload Found in Subdomain Base64: 'Zmx1eF9kZXRlY3RfZGF0YQ=='", severity: "WARN" },
+  { type: "MITM_INTERCEPT", message: "PCKT_5663: IP 192.168.1.100 -> 8.8.8.8 [PROTO: DNS] - Query: 'telemetry-upload.telstar11n.exfil.org'", severity: "WARN" },
+  { type: "MITM_INTERCEPT", message: "PCKT_8058: MODBUS/VSAT Slave -> Master | STATUS: ACK (BUC_LEVEL=OK, LNB_TEMP=32.4C)", severity: "INFO" },
+  { type: "MITM_INTERCEPT", message: "PCKT_9795: MODBUS/VSAT Master -> Slave | CMD: SET_UPLINK_GAIN 12.5dB [STIA_OVERRIDE_CAPABILITY]", severity: "WARN" },
+  { type: "MITM_INTERCEPT", message: "PCKT_6889: HTTP BODY DATA DETECTED | Raw: '{user: \"admin\", pass: \"S@tCom123!\"}' [ALERT: PLAIN-TEXT PASSWORD EXPOSED]", severity: "CRITICAL" },
+  { type: "GPS_OP_EVENT", message: "BROADCASTING_FALSE_TELEMETRY | COORDS: [45.34011, -75.63116] (Telstar 11N / Ottawa Sector)", severity: "CRITICAL" },
+  { type: "GPS_OP_EVENT", message: "CEASED_FALSE_TELEMETRY | COORDS: [45.34011, -75.63116] (Telstar 11N / Ottawa Sector)", severity: "INFO" }
+];
+
 // Simulated Threat Intelligence Feed from Aegis
+let eventIndex = 0;
 setInterval(() => {
-  const ping = Math.floor(Math.random() * 15) + 1;
-  io.emit("security_alert", {
-    type: "IDS_LOG",
-    message: `Dropped ${ping} unauthorized packets at perimeter firewall.`,
-    severity: "INFO"
-  });
-}, 10000);
+  if (Math.random() > 0.4) {
+    const event = SATCOM_INTERCEPT_EVENTS[eventIndex];
+    eventIndex = (eventIndex + 1) % SATCOM_INTERCEPT_EVENTS.length;
+    io.emit("security_alert", {
+      type: event.type,
+      message: event.message,
+      severity: event.severity
+    });
+  } else {
+    const ping = Math.floor(Math.random() * 15) + 1;
+    io.emit("security_alert", {
+      type: "IDS_LOG",
+      message: `Dropped ${ping} unauthorized packets at perimeter firewall.`,
+      severity: "INFO"
+    });
+  }
+}, 8000);
 
 // Set up WebSocket connections
 io.on("connection", (socket) => {
@@ -127,16 +153,25 @@ io.on("connection", (socket) => {
   });
 });
 
-// Initialize server-side Gemini client utility
-// Note: httpOptions contains User-Agent Header as requested
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Initialize server-side Gemini client utility lazily to avoid startup crashes if key is missing
+let ai: GoogleGenAI | null = null;
+function getAiClient() {
+  if (!ai) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is missing.");
+    }
+    ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return ai;
+}
 
 // Help check if Gemini is configured correctly
 app.get("/api/config", (req, res) => {
@@ -161,49 +196,97 @@ app.post("/api/audit-code", async (req, res) => {
     
     if (code.includes("modulusLength: 1024")) {
       vulnerabilities.push({
-        algorithm: "RSA-1024 Modulus Length",
+        algorithm: "RSA-1024",
         severity: "CRITICAL",
-        threat: "Modulus size (1024 bits) is instantly factored by Shor's quantum algorithm.",
+        threat: "Quantum Cryptanalysis Threat: modulus size (1024 bits) is insecure against both classical cryptanalysis and Shor's quantum algorithm. Failure Channel: Shor's algorithm can factor the modulus and recover private keys.",
         lineMatch: "modulusLength: 1024,",
-        pqcReplacement: "ML-KEM (Kyber-768)",
-        mitigationSteps: "Upgrade standard asymmetric modulus size to 3072/4096 or migrate completely to NIST post-quantum ML-KEM-768 (SP 800-203).",
-        pqcReplacementCode: "modulusLength: 3072, // Classical fallback (Transitioning to ML-KEM-768)"
+        pqcReplacement: "ML-KEM-768 or ML-KEM-1024 (FIPS 203)",
+        mitigationSteps: "Post-Quantum Remediation Selection: Transition to ML-KEM-768 or ML-KEM-1024. If relying on native Node.js crypto, utilize a PQC-compatible provider or library implementing NIST FIPS 203/204/205 standards. Immediate migration to FIPS 203 (ML-KEM/Kyber) is required for key encapsulation mechanisms, or hybrid schemes should be implemented if immediate FIPS-compliant library support is pending.",
+        pqcReplacementCode: "modulusLength: 3072, // Temporary fallback (Immediate transition to FIPS 203 ML-KEM recommended)"
+      });
+    }
+
+    if (code.includes("modulusLength: 2048")) {
+      vulnerabilities.push({
+        algorithm: "RSA-2048 Modulus Length",
+        severity: "CRITICAL",
+        threat: "Quantum Cryptanalysis Threat: Harvesting of active user session packages recorded. Active exchanges are vulnerable to retroactive decryption by Shor's algorithm.",
+        lineMatch: "modulusLength: 2048,",
+        pqcReplacement: "ML-KEM-1024 (Kyber-1024)",
+        mitigationSteps: "Transition recommended: Immediately migrate standard asymmetric RSA-2048 key exchange structures to NIST FIPS 203 ML-KEM-1024 to secure sessions against retroactive quantum cryptanalysis.",
+        pqcReplacementCode: "nistLevel: 5, // Upgraded to FIPS 203 ML-KEM-1024 (NIST Level 5) standard"
+      });
+    }
+
+    if (code.includes("modulusLength: 0")) {
+      vulnerabilities.push({
+        algorithm: "RSA",
+        severity: "CRITICAL",
+        threat: "Quantum computers can break RSA via Shor's algorithm, rendering asymmetric encryption useless.",
+        lineMatch: "const options = { modulusLength: 0, // Fast generation",
+        pqcReplacement: "ML-KEM (FIPS 203)",
+        mitigationSteps: "Remove RSA infrastructure entirely and migrate to Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM).",
+        pqcReplacementCode: "const options = { nistLevel: 3 }; // Upgraded to ML-KEM-768 standard"
       });
     }
 
     if (code.includes("crypto.generateKeyPairSync('rsa'")) {
       vulnerabilities.push({
-        algorithm: "RSA Asymmetric Keygen Sync",
+        algorithm: "RSA Key Generation",
         severity: "CRITICAL",
-        threat: "Legacy RSA key generation lack quantum forward secrecy.",
+        threat: "Shor's algorithm can factor the modulus and recover private keys. Insecure against both classical cryptanalysis and Shor's quantum algorithm.",
         lineMatch: "return crypto.generateKeyPairSync('rsa', options);",
-        pqcReplacement: "ML-KEM (Kyber-768)",
-        mitigationSteps: "Replace legacy asymmetric schemes with lattice-based key encapsulation mechanisms.",
-        pqcReplacementCode: "// Upgraded from legacy RSA to post-quantum ML-KEM\n  return mlKemStream.createKeyPair({ nistLevel: 3 });"
+        pqcReplacement: "ML-KEM-768 or ML-KEM-1024 (FIPS 203)",
+        mitigationSteps: "Transition to ML-KEM-768 or ML-KEM-1024. If relying on native Node.js crypto, utilize a PQC-compatible provider or library implementing NIST FIPS 203/204/205 standards.",
+        pqcReplacementCode: "// Transition to ML-KEM-768 or ML-KEM-1024 (FIPS 203 Key Encapsulation standard)\n  return mlKemStream.createKeyPair({ nistLevel: 3 });"
+      });
+    }
+
+    if (code.includes("crypto.generateKeyPairSync('ml-kem-768'")) {
+      vulnerabilities.push({
+        algorithm: "crypto.generateKeyPairSync RSA fallback",
+        severity: "CRITICAL",
+        threat: "Invalid algorithm usage and reliance on legacy RSA key derivation patterns.",
+        lineMatch: "return crypto.generateKeyPairSync('ml-kem-768', { modulusLength: 0 });",
+        pqcReplacement: "ML-KEM-768",
+        mitigationSteps: "Utilize a NIST-approved PQC library capable of handling FIPS 203 key encapsulation.",
+        pqcReplacementCode: "return mlKemStream.createKeyPair({ nistLevel: 3 });"
       });
     }
 
     if (code.includes("crypto.createHash('sha1')")) {
       vulnerabilities.push({
-        algorithm: "SHA-1 Hash",
-        severity: "HIGH",
-        threat: "Collision attacks combine with quantum pre-image security degradation under Grover's search.",
-        lineMatch: "const primaryHash = crypto.createHash('sha1')",
-        pqcReplacement: "SHA-256",
-        mitigationSteps: "Update hashing algorithms to SHA-256, SHA-384 or SHA3-256 to ensure robust quantum-safe pre-image protection.",
-        pqcReplacementCode: "const primaryHash = crypto.createHash('sha256')"
+        algorithm: "SHA-1",
+        severity: "CRITICAL",
+        threat: "Collision vulnerability and susceptibility to Grover's algorithm acceleration.",
+        lineMatch: "crypto.createHash('sha1')",
+        pqcReplacement: "SHA3-512",
+        mitigationSteps: "Replace SHA-1 with a collision-resistant function like SHA3-512.",
+        pqcReplacementCode: "crypto.createHash('sha3-512')"
       });
     }
 
     if (code.includes("crypto.createHash('md5')")) {
       vulnerabilities.push({
-        algorithm: "MD5 Hashing",
+        algorithm: "MD5",
+        severity: "CRITICAL",
+        threat: "Total loss of collision resistance and cryptographic obsolescence.",
+        lineMatch: "crypto.createHash('md5')",
+        pqcReplacement: "SHA3-512",
+        mitigationSteps: "Immediately deprecate MD5 and utilize SHA3-512 for secondary integrity checks.",
+        pqcReplacementCode: "crypto.createHash('sha3-512')"
+      });
+    }
+
+    if (code.includes("STIA LINK BUDGET TACTICAL UTILITY") || code.includes("calculate_link_budget")) {
+      vulnerabilities.push({
+        algorithm: "Unencrypted IPoS SatCom Channel",
         severity: "HIGH",
-        threat: "Severe classical collisions; highly vulnerable to quantum pre-image tampering.",
-        lineMatch: "const fingerprint = crypto.createHash('md5')",
-        pqcReplacement: "SHA3-256",
-        mitigationSteps: "Replace deprecated MD5 signature fingerprints with NIST-approved FIPS 202 SHA3-256 standard.",
-        pqcReplacementCode: "const fingerprint = crypto.createHash('sha3-256')"
+        threat: "Uplink and downlink transmission parameters are calculated correctly, but transmitted in cleartext. Adversaries can sniff or inject false telemetry coordinates (OP_TELSTAR_MITM).",
+        lineMatch: 'print("--- STIA LINK BUDGET TACTICAL UTILITY ---")',
+        pqcReplacement: "ML-KEM-1024 Quantum Tunneling",
+        mitigationSteps: "Incorporate quantum-safe encapsulation tunnels (ML-KEM-1024) and digitally sign VSAT MODBUS control commands.",
+        pqcReplacementCode: 'print("--- STIA LINK BUDGET TACTICAL UTILITY ---")\n    # SECURED VIA ML-KEM-1024 LATTICE HYBRID TUNNEL'
       });
     }
 
@@ -235,7 +318,7 @@ Code Content:
 ${code}
 \`\`\``;
 
-    const response = await ai.models.generateContent({
+    const response = await getAiClient().models.generateContent({
       model: "gemini-3.1-flash-lite",
       contents: prompt,
       config: {

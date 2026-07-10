@@ -2,17 +2,21 @@ import React, { useState, useEffect } from "react";
 import { 
   Shield, Activity, Cpu, Zap, Lock, Settings2, Terminal, ArrowRight, 
   Bug, Clock, Radio, FileText, CheckCircle2, AlertOctagon, Loader2, Play, 
-  Trash2, ShieldAlert, Award, AlertTriangle, Key, BookOpen, Download
+  Trash2, ShieldAlert, Award, AlertTriangle, Key, BookOpen, Download, X,
+  Compass, Wifi
 } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { ThreatMonitor } from "./components/ThreatMonitor";
 import { KeyGenerator } from "./components/KeyGenerator";
 import { PalantirDashboard } from "./components/PalantirDashboard";
 import { AuditHistory } from "./components/AuditHistory";
+import { SyntaxHighlightedEditor } from "./components/SyntaxHighlightedEditor";
+import { LinkBudgetCalculator } from "./components/LinkBudgetCalculator";
 import { PQC_ALGORITHMS, PRELOADED_CODE_SNIPPETS, NIST_MIGRATION_TIMELINE } from "./constants";
 import { AuditResult, AuditVulnerability, AuditHistoryEntry } from "./types";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"command" | "pqc" | "audit" | "roadmap" | "palantir">("command");
+  const [activeTab, setActiveTab] = useState<"command" | "pqc" | "audit" | "roadmap" | "palantir" | "link-budget">("command");
   const [totalKeysGenerated, setTotalKeysGenerated] = useState(0);
   
   // Header telemetry live variables
@@ -24,9 +28,21 @@ export default function App() {
   const [auditCode, setAuditCode] = useState(PRELOADED_CODE_SNIPPETS[0].code);
   const [selectedSnippetId, setSelectedSnippetId] = useState(PRELOADED_CODE_SNIPPETS[0].id);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [isQuickAuditing, setIsQuickAuditing] = useState(false);
+  const [lastScanWasQuick, setLastScanWasQuick] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [originalRiskScore, setOriginalRiskScore] = useState<number>(0);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [autoRemediation, setAutoRemediation] = useState(false);
+
+  // Automated background audit sweep states
+  const [backgroundSweepActive, setBackgroundSweepActive] = useState<boolean>(true);
+  const [backgroundSweepInterval, setBackgroundSweepInterval] = useState<number>(30); // in seconds
+  const [isBackgroundAuditing, setIsBackgroundAuditing] = useState<boolean>(false);
+  const [lastBackgroundSweepTime, setLastBackgroundSweepTime] = useState<string>("");
+  const [notificationPermission, setNotificationPermission] = useState<string>(
+    typeof Notification !== "undefined" ? Notification.permission : "default"
+  );
 
   // Sub tab tracking inside audit workspace
   const [auditSubTab, setAuditSubTab] = useState<"scanner" | "history">("scanner");
@@ -44,6 +60,49 @@ export default function App() {
       }
     }
   }, []);
+
+  // Toast Alert system state for Breach Simulation alerts
+  interface SimulatorNotification {
+    id: string;
+    component: string;
+    message: string;
+    level: string;
+    timestamp: string;
+  }
+  const [simulatorAlerts, setSimulatorAlerts] = useState<SimulatorNotification[]>([]);
+
+  // Listen for simulator alerts
+  useEffect(() => {
+    const handleAlert = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        const newAlert: SimulatorNotification = {
+          id: customEvent.detail.id || Math.random().toString(),
+          component: customEvent.detail.component,
+          message: customEvent.detail.message,
+          level: customEvent.detail.level,
+          timestamp: customEvent.detail.timestamp || new Date().toLocaleTimeString()
+        };
+
+        setSimulatorAlerts(prev => {
+          // Keep only the most recent 3 alerts to prevent clutter at the top-right
+          return [newAlert, ...prev].slice(0, 3);
+        });
+
+        // Trigger automatic dismissal after 5 seconds
+        setTimeout(() => {
+          setSimulatorAlerts(prev => prev.filter(alert => alert.id !== newAlert.id));
+        }, 5000);
+      }
+    };
+
+    window.addEventListener("breach-simulation-alert", handleAlert);
+    return () => window.removeEventListener("breach-simulation-alert", handleAlert);
+  }, []);
+
+  const dismissAlert = (id: string) => {
+    setSimulatorAlerts(prev => prev.filter(alert => alert.id !== id));
+  };
 
   const handleApplyFix = (vulnIndex: number) => {
     if (!auditResult) return;
@@ -69,9 +128,18 @@ export default function App() {
       return v;
     });
 
+    const activeRisksCount = updatedVulnerabilities.filter(v => !v.isRemediated).length;
+    const totalCount = updatedVulnerabilities.length;
+    let newScore = 0;
+    if (totalCount > 0) {
+      newScore = Math.round((activeRisksCount / totalCount) * (originalRiskScore || auditResult.overallRiskScore || 0));
+    }
+
     setAuditResult({
       ...auditResult,
-      vulnerabilities: updatedVulnerabilities
+      vulnerabilities: updatedVulnerabilities,
+      isVulnerable: activeRisksCount > 0,
+      overallRiskScore: newScore
     });
 
     // Synchronize the remediation details inside local storage audit records
@@ -174,8 +242,23 @@ export default function App() {
     }
   };
 
+  const autoRemediateResult = (result: any, currentCode: string) => {
+    let newCode = currentCode;
+    const updatedVulns = result.vulnerabilities.map((v: any) => {
+      const target = v.lineMatch;
+      const replacement = v.pqcReplacementCode || v.pqcReplacement;
+      if (newCode.includes(target)) {
+        newCode = newCode.replace(target, replacement);
+        return { ...v, isRemediated: true };
+      }
+      return v;
+    });
+    return { newCode, updatedVulns };
+  };
+
   const handleAuditSubmit = async () => {
     setIsAuditing(true);
+    setLastScanWasQuick(false);
     setAuditError(null);
     setAuditResult(null);
 
@@ -191,7 +274,19 @@ export default function App() {
       }
 
       const result = await response.json();
-      setAuditResult(result);
+      setOriginalRiskScore(result.overallRiskScore);
+      
+      let finalResult = result;
+      if (autoRemediation && result.vulnerabilities && result.vulnerabilities.length > 0) {
+        const { newCode, updatedVulns } = autoRemediateResult(result, auditCode);
+        setAuditCode(newCode);
+        finalResult = {
+          ...result,
+          vulnerabilities: updatedVulns,
+          isVulnerable: updatedVulns.some((v: any) => !v.isRemediated)
+        };
+      }
+      setAuditResult(finalResult);
 
       // Save this run into persistent local history trace
       const matchedSnippet = PRELOADED_CODE_SNIPPETS.find(s => s.id === selectedSnippetId);
@@ -202,12 +297,14 @@ export default function App() {
         id: scanId,
         timestamp: new Date().toLocaleString(),
         rawTimestamp: Date.now(),
-        overallRiskScore: result.overallRiskScore,
-        isVulnerable: result.isVulnerable,
+        overallRiskScore: finalResult.overallRiskScore,
+        isVulnerable: finalResult.isVulnerable,
         snippetName: snippetName,
-        remediationsPerformed: [],
-        initialVulnerabilitiesCount: result.vulnerabilities.length,
-        vulnerabilities: result.vulnerabilities.map((v: any) => ({ ...v, isRemediated: false }))
+        remediationsPerformed: autoRemediation 
+          ? finalResult.vulnerabilities.filter((v: any) => v.isRemediated).map((v: any) => `Exchanged weak algorithm "${v.algorithm}" with Post-Quantum ${v.pqcReplacement}`)
+          : [],
+        initialVulnerabilitiesCount: finalResult.vulnerabilities.length,
+        vulnerabilities: finalResult.vulnerabilities.map((v: any) => ({ ...v, isRemediated: !!v.isRemediated }))
       };
 
       const updatedHistory = [newHistoryEntry, ...auditHistory];
@@ -219,6 +316,155 @@ export default function App() {
       setAuditError(err.message || String(err));
     } finally {
       setIsAuditing(false);
+    }
+  };
+
+  const handleQuickAudit = async () => {
+    setIsQuickAuditing(true);
+    setLastScanWasQuick(true);
+    setAuditError(null);
+    setAuditResult(null);
+    setActiveScanId("quick_audit_temp"); // transient non-history scan marker
+
+    try {
+      const response = await fetch("/api/audit-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: auditCode })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Audit agent responded with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      setOriginalRiskScore(result.overallRiskScore);
+      
+      let finalResult = result;
+      if (autoRemediation && result.vulnerabilities && result.vulnerabilities.length > 0) {
+        const { newCode, updatedVulns } = autoRemediateResult(result, auditCode);
+        setAuditCode(newCode);
+        finalResult = {
+          ...result,
+          vulnerabilities: updatedVulns,
+          isVulnerable: updatedVulns.some((v: any) => !v.isRemediated)
+        };
+      }
+      setAuditResult(finalResult);
+      // Skip history logging entirely per requirements
+    } catch (err: any) {
+      console.error(err);
+      setAuditError(err.message || String(err));
+    } finally {
+      setIsQuickAuditing(false);
+    }
+  };
+
+  // Periodic background audit sweep
+  useEffect(() => {
+    if (!backgroundSweepActive) return;
+
+    const intervalId = setInterval(async () => {
+      // Avoid running if a manual audit or another background scan is active, or if code is empty
+      if (isAuditing || isQuickAuditing || isBackgroundAuditing || !auditCode.trim()) {
+        return;
+      }
+
+      setIsBackgroundAuditing(true);
+      try {
+        const response = await fetch("/api/audit-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: auditCode })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Background sweep returned status ${response.status}`);
+        }
+
+        const result = await response.json();
+        setOriginalRiskScore(result.overallRiskScore);
+        
+        let finalResult = result;
+        let finalCode = auditCode;
+        if (autoRemediation && result.vulnerabilities && result.vulnerabilities.length > 0) {
+          const { newCode, updatedVulns } = autoRemediateResult(result, auditCode);
+          finalCode = newCode;
+          setAuditCode(newCode);
+          finalResult = {
+            ...result,
+            vulnerabilities: updatedVulns,
+            isVulnerable: updatedVulns.some((v: any) => !v.isRemediated)
+          };
+        }
+        setAuditResult(finalResult);
+
+        const matchedSnippet = PRELOADED_CODE_SNIPPETS.find(s => s.id === selectedSnippetId);
+        const snippetName = matchedSnippet ? `${matchedSnippet.label} (Auto Sweep)` : `Custom Code Segment (Auto Sweep)`;
+        const scanId = "autosweep_" + Date.now();
+
+        const newHistoryEntry: AuditHistoryEntry = {
+          id: scanId,
+          timestamp: new Date().toLocaleTimeString() + " [Background Sweep]",
+          rawTimestamp: Date.now(),
+          overallRiskScore: finalResult.overallRiskScore,
+          isVulnerable: finalResult.isVulnerable,
+          snippetName: snippetName,
+          remediationsPerformed: autoRemediation 
+            ? finalResult.vulnerabilities.filter((v: any) => v.isRemediated).map((v: any) => `Exchanged weak algorithm "${v.algorithm}" with Post-Quantum ${v.pqcReplacement}`)
+            : [],
+          initialVulnerabilitiesCount: finalResult.vulnerabilities.length,
+          vulnerabilities: finalResult.vulnerabilities.map((v: any) => ({ ...v, isRemediated: !!v.isRemediated }))
+        };
+
+        setAuditHistory(prev => {
+          const updated = [newHistoryEntry, ...prev].slice(0, 50);
+          localStorage.setItem("aegis_audit_history", JSON.stringify(updated));
+          return updated;
+        });
+
+        setActiveScanId(scanId);
+        setLastBackgroundSweepTime(new Date().toLocaleTimeString());
+
+        // Desktop Notification Trigger - ONLY if user is navigated to a different tab
+        if (document.hidden || document.visibilityState !== "visible") {
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            const statusMessage = finalResult.isVulnerable 
+              ? `⚠️ DEGRADED STATE - ${finalResult.vulnerabilities.filter((v: any) => !v.isRemediated).length} quantum vulnerabilities detected!` 
+              : `✅ COMPLIANT - No quantum vulnerabilities identified.`;
+            
+            new Notification("🛡️ Aegis Automated PQC Sweep Complete", {
+              body: `Background audit finished with overall risk score of ${finalResult.overallRiskScore}/100.\nStatus: ${statusMessage}`,
+              icon: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2314f7ff'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg>",
+              tag: "aegis-pqc-sweep"
+            });
+          }
+        }
+      } catch (err: any) {
+        if (err && (err.message === "Failed to fetch" || err.name === "TypeError")) {
+          console.warn("Background audit sweep: network connection unavailable or server restarting.", err.message || err);
+        } else {
+          console.error("Background audit sweep failed:", err);
+        }
+      } finally {
+        setIsBackgroundAuditing(false);
+      }
+    }, backgroundSweepInterval * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [backgroundSweepActive, backgroundSweepInterval, auditCode, selectedSnippetId, isAuditing, isQuickAuditing, isBackgroundAuditing, autoRemediation]);
+
+  const requestNotificationPermission = () => {
+    if (typeof Notification !== "undefined") {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+        if (permission === "granted") {
+          new Notification("🛡️ Aegis Desktop Alerts Enabled", {
+            body: "Aegis background sweep reports will now notify you when you are in other tabs.",
+            icon: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2314f7ff'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg>"
+          });
+        }
+      });
     }
   };
 
@@ -263,6 +509,21 @@ End of Aegis Autonomous Audit Report.
     const link = document.createElement("a");
     link.href = url;
     link.download = `Aegis_PQC_Audit_Report_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJson = () => {
+    if (!auditResult) return;
+
+    const dataStr = JSON.stringify(auditResult, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Aegis_PQC_Audit_Report_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -430,6 +691,18 @@ End of Aegis Autonomous Audit Report.
         >
           <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-400" />
           Palantir Live Telemetry
+        </button>
+
+        <button
+          onClick={() => setActiveTab("link-budget")}
+          className={`font-mono text-xs uppercase tracking-widest py-1.5 px-4 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === "link-budget"
+              ? "bg-blue-500/15 text-[#14f7ff] border-[#14f7ff]/75 shadow-[0_0_10px_rgba(20,247,255,0.2)] font-bold"
+              : "bg-transparent text-slate-400 border-transparent hover:border-slate-800 hover:text-white"
+          }`}
+        >
+          <Compass className="w-3.5 h-3.5 animate-spin-slow text-[#14f7ff]" />
+          Satellite Link Budget
         </button>
       </nav>
 
@@ -630,45 +903,168 @@ End of Aegis Autonomous Audit Report.
                         </div>
                       </div>
                       
-                      <textarea
+                      <SyntaxHighlightedEditor
                         value={auditCode}
-                        onChange={(e) => {
-                          setAuditCode(e.target.value);
+                        onChange={(val) => {
+                          setAuditCode(val);
                           setSelectedSnippetId(""); // customized
                         }}
                         placeholder="// Enter your source code here for NIST compliance checks..."
-                        className="w-full h-80 bg-transparent font-mono text-[11.5px] leading-relaxed text-slate-200 outline-none border-none resize-none select-text"
+                        className="w-full h-80 pb-12"
                       />
+
+                      {/* Floating 'Quick Audit' button */}
+                      <div className="absolute bottom-3 right-3 z-10">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleQuickAudit();
+                          }}
+                          disabled={isAuditing || isQuickAuditing || !auditCode.trim()}
+                          className="bg-[#14f7ff]/10 hover:bg-[#14f7ff]/20 active:bg-[#14f7ff]/30 border border-[#14f7ff]/40 hover:border-[#14f7ff] text-[#14f7ff] disabled:opacity-40 disabled:cursor-not-allowed text-[10.5px] uppercase font-mono tracking-wider font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(20,247,255,0.25)] backdrop-blur-md cursor-pointer group"
+                        >
+                          {isQuickAuditing ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Scanning...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-3.5 h-3.5 animate-pulse group-hover:scale-110 transition-transform" />
+                              Quick Audit
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
 
                     {/* Automated Remediation Toggle */}
-                    <div className="mt-4 flex items-center justify-between p-3.5 bg-[#060a13] border border-white/5 rounded-lg select-none">
-                      <div className="flex items-center gap-2.5">
-                        <Cpu className={`w-4 h-4 transition-colors ${autoRemediation ? "text-[#14f7ff]" : "text-white/30"}`} />
-                        <div>
-                          <span className="block text-xs font-mono font-bold text-white uppercase tracking-wider">Automated Remediation</span>
-                          <span className="block text-[10px] text-slate-400 font-sans">Enable instant classical-to-PQC replacement overrides</span>
+                    <div className="mt-4 space-y-3">
+                      {/* Remediation Toggle */}
+                      <div className="flex items-center justify-between p-3.5 bg-[#060a13] border border-white/5 rounded-lg select-none">
+                        <div className="flex items-center gap-2.5">
+                          <Cpu className={`w-4 h-4 transition-colors ${autoRemediation ? "text-[#14f7ff]" : "text-white/30"}`} />
+                          <div>
+                            <span className="block text-xs font-mono font-bold text-white uppercase tracking-wider">Automated Remediation</span>
+                            <span className="block text-[10px] text-slate-400 font-sans">Enable instant classical-to-PQC replacement overrides</span>
+                          </div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => setAutoRemediation(!autoRemediation)}
-                        className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 outline-none flex items-center shrink-0 cursor-pointer ${
-                          autoRemediation ? "bg-cyan-500" : "bg-slate-800"
-                        }`}
-                      >
-                        <div
-                          className={`bg-white w-5 h-5 rounded-full shadow transform transition-transform duration-200 ${
-                            autoRemediation ? "translate-x-5" : "translate-x-0"
+                        <button
+                          onClick={() => setAutoRemediation(!autoRemediation)}
+                          className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 outline-none flex items-center shrink-0 cursor-pointer ${
+                            autoRemediation ? "bg-cyan-500" : "bg-slate-800"
                           }`}
-                        />
-                      </button>
+                        >
+                          <div
+                            className={`bg-white w-5 h-5 rounded-full shadow transform transition-transform duration-200 ${
+                              autoRemediation ? "translate-x-5" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Automated Background Sweep Toggle */}
+                      <div className="p-3.5 bg-[#060a13] border border-white/5 rounded-lg space-y-3 select-none">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <Radio className={`w-4 h-4 transition-colors ${backgroundSweepActive ? "text-emerald-400 animate-pulse" : "text-white/30"}`} />
+                            <div>
+                              <span className="block text-xs font-mono font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                                Automated Background Sweep
+                                {isBackgroundAuditing && (
+                                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                )}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 font-sans">
+                                Run compliance sweep in background periodically
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setBackgroundSweepActive(!backgroundSweepActive)}
+                            className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 outline-none flex items-center shrink-0 cursor-pointer ${
+                              backgroundSweepActive ? "bg-emerald-500" : "bg-slate-800"
+                            }`}
+                          >
+                            <div
+                              className={`bg-white w-5 h-5 rounded-full shadow transform transition-transform duration-200 ${
+                                backgroundSweepActive ? "translate-x-5" : "translate-x-0"
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {backgroundSweepActive && (
+                          <div className="flex items-center justify-between border-t border-white/5 pt-2.5 mt-1">
+                            <span className="text-[10px] font-mono text-slate-400 uppercase font-bold flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-[#14f7ff]/70" /> Interval Cycle
+                            </span>
+                            <div className="flex gap-1.5 bg-[#030611] p-0.5 rounded border border-white/10">
+                              {[15, 30, 60].map(sec => (
+                                <button
+                                  key={sec}
+                                  onClick={() => setBackgroundSweepInterval(sec)}
+                                  className={`text-[9px] font-mono font-bold px-2 py-1 rounded transition-all cursor-pointer ${
+                                    backgroundSweepInterval === sec
+                                      ? "bg-[#14f7ff]/15 text-[#14f7ff] border border-[#14f7ff]/20"
+                                      : "text-white/30 hover:text-white/60 border border-transparent"
+                                  }`}
+                                >
+                                  {sec}s
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {lastBackgroundSweepTime && backgroundSweepActive && (
+                          <div className="text-[9px] font-mono text-emerald-400/80 flex items-center justify-between bg-emerald-950/10 border border-emerald-500/10 p-1.5 rounded">
+                            <span>⚡ Last background sweep completed:</span>
+                            <span className="font-bold">{lastBackgroundSweepTime}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Desktop Notifications Setup */}
+                      <div className="p-3.5 bg-[#060a13] border border-white/5 rounded-lg flex items-center justify-between select-none">
+                        <div className="flex items-center gap-2.5">
+                          <Radio className={`w-4 h-4 ${notificationPermission === "granted" ? "text-cyan-400" : "text-white/30"}`} />
+                          <div>
+                            <span className="block text-xs font-mono font-bold text-white uppercase tracking-wider">
+                              Desktop Alerts Status
+                            </span>
+                            <span className="block text-[10px] text-slate-400 font-sans">
+                              {notificationPermission === "granted" 
+                                ? "Notifications allowed. Ready to alert you on other tabs."
+                                : notificationPermission === "denied"
+                                ? "Notification permission denied. Enable in browser site settings."
+                                : "Aegis needs browser permission to send background alerts."}
+                            </span>
+                          </div>
+                        </div>
+
+                        {notificationPermission !== "granted" ? (
+                          <button
+                            onClick={requestNotificationPermission}
+                            disabled={notificationPermission === "denied"}
+                            className="bg-[#14f7ff]/10 hover:bg-[#14f7ff]/20 border border-[#14f7ff]/30 hover:border-[#14f7ff] text-[#14f7ff] font-mono text-[9px] font-bold uppercase py-1.5 px-3 rounded cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                          >
+                            Grant Permission
+                          </button>
+                        ) : (
+                          <span className="text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 py-1 px-2.5 rounded uppercase font-bold tracking-wider">
+                            ACTIVE
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Audit trigger CTA */}
                   <button
                     onClick={handleAuditSubmit}
-                    disabled={isAuditing || !auditCode.trim()}
+                    disabled={isAuditing || isQuickAuditing || !auditCode.trim()}
                     className="w-full mt-2 flex items-center justify-center gap-2 bg-[#14f7ff]/10 hover:bg-[#14f7ff]/20 border border-[#14f7ff]/50 hover:border-[#14f7ff] text-[#14f7ff] py-3.5 rounded-lg font-mono font-bold text-sm tracking-wider uppercase cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_12px_rgba(20,247,255,0.1)]"
                   >
                     {isAuditing ? (
@@ -688,7 +1084,7 @@ End of Aegis Autonomous Audit Report.
                 {/* Outcomes panel right */}
                 <div className="lg:col-span-7 border border-blue-500/20 bg-[#0a0f1d]/80 rounded-xl p-5 shadow-2xl flex flex-col justify-between min-h-[500px]">
                   
-                  {!isAuditing && !auditResult && !auditError && (
+                  {!isAuditing && !isQuickAuditing && !auditResult && !auditError && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
                       <Cpu className="w-12 h-12 text-[#14f7ff]/20 mb-4 animate-pulse" />
                       <p className="font-mono text-sm text-[#14f7ff]/50 uppercase tracking-widest font-semibold">Ready for Compliance Directive</p>
@@ -698,7 +1094,7 @@ End of Aegis Autonomous Audit Report.
                     </div>
                   )}
 
-                  {isAuditing && (
+                  {(isAuditing || isQuickAuditing) && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
                       <div className="w-16 h-16 rounded-full border-4 border-dashed border-[#14f7ff]/50 border-t-[#14f7ff] animate-spin flex items-center justify-center mb-6">
                         <Shield className="w-8 h-8 text-[#14f7ff]" />
@@ -718,13 +1114,18 @@ End of Aegis Autonomous Audit Report.
                     </div>
                   )}
 
-                  {!isAuditing && auditResult && (
+                  {!isAuditing && !isQuickAuditing && auditResult && (
                     <div className="flex-1 flex flex-col justify-between gap-5 animate-fade-in pr-1 overflow-x-hidden">
                       {/* Metric summary metadata card */}
                       <div className="border border-[#14f7ff]/20 bg-[#060a13] rounded-lg p-4 flex flex-col md:flex-row items-stretch justify-between gap-4 font-mono">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="text-[11px] font-bold uppercase text-[#14f7ff]">AI Compliance Appraisal</span>
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                            <span className="text-[11px] font-bold uppercase text-[#14f7ff] mr-1">AI Compliance Appraisal</span>
+                            {lastScanWasQuick && (
+                              <span className="bg-[#14f7ff]/10 text-[#14f7ff] text-[9px] font-bold border border-[#14f7ff]/30 py-0.5 px-2 rounded uppercase tracking-wider animate-pulse">
+                                ⚡ MINIMAL SCAN (UNLOGGED)
+                              </span>
+                            )}
                             {auditResult.isVulnerable ? (
                               <span className="bg-red-950 text-red-400 text-[9px] font-bold border border-red-800 py-0.5 px-2 rounded uppercase tracking-wider">
                                 DEGRADED STATE
@@ -756,15 +1157,25 @@ End of Aegis Autonomous Audit Report.
 
                       {/* Score description bar */}
                       <div className="space-y-3 flex-1 overflow-y-auto max-h-[350px] pr-2">
-                        <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-white/5 pb-1 gap-2">
                           <h4 className="font-mono text-xs uppercase text-[#14f7ff]/70 font-bold">vulnerability details ledger ({auditResult.vulnerabilities.length})</h4>
-                          <button
-                            onClick={handleExportReport}
-                            className="flex items-center gap-1.5 bg-[#14f7ff]/10 hover:bg-[#14f7ff]/20 border border-[#14f7ff]/40 hover:border-[#14f7ff] text-[#14f7ff] py-1 px-2.5 rounded text-[10px] font-mono tracking-wider uppercase transition-all shadow-[0_0_8px_rgba(20,247,255,0.05)] cursor-pointer"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            Export Report
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleExportReport}
+                              className="flex items-center gap-1.5 bg-[#14f7ff]/10 hover:bg-[#14f7ff]/20 border border-[#14f7ff]/40 hover:border-[#14f7ff] text-[#14f7ff] py-1 px-2.5 rounded text-[10px] font-mono tracking-wider uppercase transition-all shadow-[0_0_8px_rgba(20,247,255,0.05)] cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Export Report
+                            </button>
+                            <button
+                              onClick={handleExportJson}
+                              className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 hover:border-emerald-500 text-emerald-400 py-1 px-2.5 rounded text-[10px] font-mono tracking-wider uppercase transition-all shadow-[0_0_8px_rgba(16,185,129,0.05)] cursor-pointer"
+                              title="Download full audit scan details as a structured JSON file"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              Export to JSON
+                            </button>
+                          </div>
                         </div>
                         {auditResult.vulnerabilities.length === 0 ? (
                           <div className="py-8 text-center bg-[#070b1a] rounded border border-white/5">
@@ -805,7 +1216,7 @@ End of Aegis Autonomous Audit Report.
                                     <span className="text-[8.5px] uppercase text-white/30 block">NIST Alternative</span>
                                     <span className="text-emerald-400 font-bold text-[11.5px] uppercase tracking-wider block">{vuln.pqcReplacement}</span>
                                   </div>
-                                  {autoRemediation && !vuln.isRemediated && (
+                                  {!vuln.isRemediated && (
                                     <button
                                       onClick={() => handleApplyFix(index)}
                                       disabled={!auditCode.includes(vuln.lineMatch)}
@@ -1037,6 +1448,21 @@ End of Aegis Autonomous Audit Report.
                 <PalantirDashboard />
               </div>
             )}
+
+            {activeTab === "link-budget" && (
+              <div className="animate-fade-in">
+                <div className="mb-4 bg-[#0a0f1d] border border-blue-500/15 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <h2 className="text-sm font-mono font-bold text-white uppercase tracking-wider">Satellite Link Budget Analyzer</h2>
+                    <p className="text-xs text-slate-400">STIA Tactical utility calculating Free Space Path Loss, Antenna Gain, and G/T metrics for Telstar 11N slots.</p>
+                  </div>
+                  <span className="bg-blue-950 text-[#14f7ff] text-[10px] font-mono py-1 px-3 border border-blue-800/50 rounded uppercase font-bold text-center animate-pulse shrink-0">
+                    STIA LOG: 8842-DELTA
+                  </span>
+                </div>
+                <LinkBudgetCalculator />
+              </div>
+            )}
           </div>
         </section>
       </main>
@@ -1058,6 +1484,57 @@ End of Aegis Autonomous Audit Report.
           <span className="bg-blue-500/10 px-2 py-0.5 border border-blue-500/20 text-white font-bold">UTC CLOCK: ACTIVE</span>
         </div>
       </footer>
+
+      {/* Toast Warning Notifications Container */}
+      <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">
+        <AnimatePresence>
+          {simulatorAlerts.map((alert) => (
+            <motion.div
+              key={alert.id}
+              initial={{ opacity: 0, x: 50, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 100, scale: 0.9, transition: { duration: 0.2 } }}
+              className="pointer-events-auto bg-[#0a060a]/95 border border-red-500/40 hover:border-red-500/80 rounded-lg p-3.5 shadow-[0_0_20px_rgba(239,68,68,0.25)] flex items-start gap-3 backdrop-blur-md transition-shadow relative overflow-hidden group font-mono text-[11px]"
+            >
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 animate-pulse" />
+
+              <div className="bg-red-500/10 p-1.5 rounded border border-red-500/25 shrink-0 mt-0.5">
+                <AlertOctagon className="w-4 h-4 text-red-500 animate-bounce" />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2.5 mb-1">
+                  <span className="text-[9.5px] font-extrabold text-red-400 tracking-wider uppercase flex items-center gap-1">
+                    ⚠️ SIMULATOR VECTOR WARNING
+                  </span>
+                  <span className="text-[8.5px] text-white/30 font-bold">
+                    {alert.timestamp}
+                  </span>
+                </div>
+                <p className="text-white font-sans text-xs font-semibold leading-relaxed mb-1 pr-4">
+                  {alert.message}
+                </p>
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <span className="bg-red-500/10 text-red-400 border border-red-500/20 text-[8px] font-bold py-0.5 px-1.5 rounded uppercase tracking-widest">
+                    {alert.component}
+                  </span>
+                  <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[8px] font-bold py-0.5 px-1.5 rounded uppercase font-bold">
+                    {alert.level} RISK
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => dismissAlert(alert.id)}
+                className="text-white/20 hover:text-white/85 transition-colors p-1 rounded hover:bg-white/5 cursor-pointer shrink-0 absolute top-2 right-2"
+                title="Dismiss Alert"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

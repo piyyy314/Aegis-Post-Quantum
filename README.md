@@ -1,20 +1,27 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 🛡️ Aegis — Post‑Quantum Security & Satellite Intelligence Suite
 
-# Run and deploy your AI Studio app
+Aegis is a hybrid **post‑quantum security**, **satellite communication**, and **AI‑augmented analysis** toolkit.  
+It extends the Google AI Studio template with real operational satellite tools, link‑budget utilities, and secure PQC workflows.
 
-This contains everything you need to run your app locally.
+This project is built from the **Google Gemini AI Studio repository template** and enhanced with real‑world GEO satellite engineering tools.
 
-View your app in AI Studio: https://ai.studio/apps/814679d8-9038-4b34-8d4d-b6a722df42b4
+---
 
-## Run Locally
+## ✨ Features
 
-**Prerequisites:**  Node.js
+| Module | Description |
+|--------|-------------|
+| **Post‑Quantum Security** | PQC readiness checks, crypto migration helpers |
+| **Satellite Tools** | GEO look‑angle calculator, link‑budget utilities |
+| **AI Studio Integration** | Gemini‑powered workflows and local dev server |
+| **Secure Local Execution** | `.env.local`‑based key isolation |
+| **Modern Stack** | TypeScript, Vite, Node.js, Tauri-ready |
 
+---
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🚀 Getting Started
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/piyyy314/Aegis-Post-Quantum
+cd Aegis-Post-Quantum

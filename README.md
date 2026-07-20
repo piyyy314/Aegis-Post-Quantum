@@ -1,7 +1,7 @@
 # 🛡️ Aegis — Post‑Quantum Security & Satellite Intelligence Suite
 
 Aegis is a hybrid **post‑quantum security**, **satellite communication**, and **AI‑augmented analysis** toolkit.  
-It extends the Google AI Studio template with real operational satellite tools, link‑budget utilities, and secure PQC workflows.
+It extends the Google Gemini AI Studio template with real operational satellite tools, link‑budget utilities, and secure PQC workflows.
 
 This project is built from the **Google Gemini AI Studio repository template** and enhanced with real‑world GEO satellite engineering tools.
 

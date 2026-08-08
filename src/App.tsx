@@ -270,7 +270,15 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Audit agent responded with status ${response.status}`);
+        let errorPayload = "";
+        try {
+          errorPayload = await response.text();
+        } catch (_) {
+          errorPayload = "<Unable to read response payload>";
+        }
+
+        console.error(`[Aegis Audit Error ${response.status}] Server response payload:\n`, errorPayload);
+        throw new Error(`Audit agent responded with status ${response.status}: ${errorPayload.slice(0, 200)}`);
       }
 
       const result = await response.json();
@@ -334,7 +342,15 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Audit agent responded with status ${response.status}`);
+        let errorPayload = "";
+        try {
+          errorPayload = await response.text();
+        } catch (_) {
+          errorPayload = "<Unable to read response payload>";
+        }
+
+        console.error(`[Aegis Quick Audit Error ${response.status}] Server response payload:\n`, errorPayload);
+        throw new Error(`Audit agent responded with status ${response.status}: ${errorPayload.slice(0, 200)}`);
       }
 
       const result = await response.json();
@@ -379,7 +395,37 @@ export default function App() {
         });
 
         if (!response.ok) {
-          throw new Error(`Background sweep returned status ${response.status}`);
+          let errorPayload = "";
+          try {
+            errorPayload = await response.text();
+          } catch (_) {
+            errorPayload = "<Unable to read response payload>";
+          }
+
+          const sweepErrorDetails = {
+            requestPayload: {
+              codeLength: auditCode.length,
+              snippetId: selectedSnippetId,
+              code: auditCode
+            },
+            status: response.status,
+            statusText: response.statusText,
+            responsePayload: errorPayload,
+            stackTrace: new Error(`Background audit sweep returned status ${response.status}`).stack
+          };
+
+          if (response.status === 500) {
+            console.error(`[Aegis Background Audit Sweep Error 500]`, sweepErrorDetails);
+          } else {
+            console.warn(`[Aegis Background Audit Sweep Status ${response.status}]`, sweepErrorDetails);
+          }
+          return;
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          console.warn("Background audit sweep deferred: non-JSON response received.");
+          return;
         }
 
         const result = await response.json();
@@ -418,6 +464,29 @@ export default function App() {
         };
 
         setAuditHistory(prev => {
+          if (
+            prev.length > 0 &&
+            (prev[0].id.startsWith("autosweep_") || prev[0].timestamp.includes("[Background Sweep]")) &&
+            prev[0].snippetName === newHistoryEntry.snippetName &&
+            prev[0].overallRiskScore === newHistoryEntry.overallRiskScore &&
+            prev[0].isVulnerable === newHistoryEntry.isVulnerable &&
+            prev[0].initialVulnerabilitiesCount === newHistoryEntry.initialVulnerabilitiesCount
+          ) {
+            // Update the existing background sweep entry's timestamp and vulnerabilities state in-place
+            const updated = [
+              {
+                ...prev[0],
+                timestamp: newHistoryEntry.timestamp,
+                rawTimestamp: newHistoryEntry.rawTimestamp,
+                vulnerabilities: newHistoryEntry.vulnerabilities,
+                remediationsPerformed: newHistoryEntry.remediationsPerformed
+              },
+              ...prev.slice(1)
+            ];
+            localStorage.setItem("aegis_audit_history", JSON.stringify(updated));
+            return updated;
+          }
+
           const updated = [newHistoryEntry, ...prev].slice(0, 50);
           localStorage.setItem("aegis_audit_history", JSON.stringify(updated));
           return updated;
@@ -441,11 +510,17 @@ export default function App() {
           }
         }
       } catch (err: any) {
-        if (err && (err.message === "Failed to fetch" || err.name === "TypeError")) {
-          console.warn("Background audit sweep: network connection unavailable or server restarting.", err.message || err);
-        } else {
-          console.error("Background audit sweep failed:", err);
-        }
+        const errMsg = err?.message || (typeof err === "string" ? err : "") || String(err) || "";
+        console.error("[Aegis Background Audit Sweep Exception]", {
+          message: errMsg,
+          requestPayload: {
+            codeLength: auditCode.length,
+            snippetId: selectedSnippetId,
+            code: auditCode
+          },
+          stack: err?.stack || new Error(errMsg).stack,
+          errorObject: err
+        });
       } finally {
         setIsBackgroundAuditing(false);
       }

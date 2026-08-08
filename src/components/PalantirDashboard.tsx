@@ -365,8 +365,8 @@ export function PalantirDashboard() {
             </span>
           </div>
 
-          <div className="w-full h-52 select-none min-w-0">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <div className="w-full h-52 select-none min-w-0 min-h-0 relative">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 500, height: 208 }}>
               <AreaChart data={getChartData()} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorCrit" x1="0" y1="0" x2="0" y2="1">

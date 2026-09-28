@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ethers } from "ethers";
+import { FirewallManager, HoneypotEngine } from "./server/honeypot";
 
 dotenv.config();
 
@@ -21,6 +22,14 @@ const io = new Server(httpServer, {
     origin: "*",
   },
 });
+
+// Initialize Honeypot Subsystem and Firewall Enforcer
+const firewall = new FirewallManager(io);
+const honeypot = new HoneypotEngine(firewall, io);
+
+// Mount Web Decoy Honeypot Traps (e.g. /admin, /.env, /wp-login.php, etc.)
+app.use(honeypot.createWebHoneypotMiddleware());
+
 
 // Secure RPC Connection via Local Auth Proxy
 const RPC_URL = process.env.SECURE_RPC_URL || "http://127.0.0.1:8545";
@@ -182,6 +191,86 @@ app.get("/api/config", (req, res) => {
   });
 });
 
+// Honeypot Status Endpoint
+app.get("/api/honeypot/status", (req, res) => {
+  res.json(honeypot.getStatus());
+});
+
+// Honeypot Telemetry & Intercept Logs
+app.get("/api/honeypot/logs", (req, res) => {
+  res.json(honeypot.getLogs());
+});
+
+// Firewall Rules & Banned IP Ledger
+app.get("/api/firewall/rules", (req, res) => {
+  res.json(firewall.getRules());
+});
+
+// Block IP manually or dynamically via system firewall (iptables, ufw, ip-route)
+app.post("/api/firewall/block", async (req, res) => {
+  const { ip, reason, tool } = req.body;
+  if (!ip) {
+    return res.status(400).json({ error: "IP address is required." });
+  }
+
+  try {
+    const rule = await firewall.blockIp(
+      ip,
+      reason || "Manual Operator Firewall Enforcement",
+      tool || "iptables"
+    );
+    res.json({ success: true, rule });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to block IP" });
+  }
+});
+
+// Unban IP and remove firewall rule
+app.post("/api/firewall/unban", async (req, res) => {
+  const { ip } = req.body;
+  if (!ip) {
+    return res.status(400).json({ error: "IP address is required." });
+  }
+
+  try {
+    const success = await firewall.unbanIp(ip);
+    res.json({ success, ip });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to unban IP" });
+  }
+});
+
+// Toggle auto-block on honeypot connection
+app.post("/api/firewall/toggle-autoblock", (req, res) => {
+  const { enabled } = req.body;
+  firewall.setAutoBlock(!!enabled);
+  res.json({ success: true, autoBlock: firewall.isAutoBlockEnabled() });
+});
+
+// Clear all active firewall rules
+app.post("/api/firewall/clear-all", (req, res) => {
+  firewall.clearAllRules();
+  res.json({ success: true });
+});
+
+// Simulate Honeypot Intrusion and Firewall Enforcement for interactive testing
+app.post("/api/honeypot/simulate-attack", async (req, res) => {
+  const { type, ip, username, password, command } = req.body;
+  try {
+    const log = await honeypot.simulateAttack({
+      type: type || "ssh",
+      ip,
+      username,
+      password,
+      command
+    });
+    res.json({ success: true, log, status: honeypot.getStatus() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Attack simulation failed" });
+  }
+});
+
+
 // AI Cryptographic Audit API Endpoint
 function runOfflineComplianceAudit(code: string) {
   const vulnerabilities: any[] = [];
@@ -322,7 +411,7 @@ ${code}
 \`\`\``;
 
     const response = await getAiClient().models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         systemInstruction: "You are Aegis-AI, an expert post-quantum cryptographic auditor. Ensure strict adherence to NIST PQC standards (FIPS 203, 204, 205). Provide specific vulnerabilities in JSON format. Ensure 'lineMatch' is a exact substring from the code, and 'pqcReplacementCode' is the direct replacement code string that correctly fixes that line while maintaining code syntax.",
@@ -402,6 +491,237 @@ ${code}
       });
     }
   }
+});
+
+// Incident Report - Metadata for Branded Cover Artworks
+app.get("/api/report/cover-assets", (_req, res) => {
+  res.json({
+    covers: [
+      {
+        id: "critical",
+        name: "Critical Quantum Breach Incident",
+        path: "/src/assets/images/critical_breach_cover_1790134985155.jpg",
+        recommendedRiskMin: 70,
+        theme: "Crimson Hologram & Fractured Key Lattice"
+      },
+      {
+        id: "elevated",
+        name: "Elevated Shor's Threat Exposure",
+        path: "/src/assets/images/elevated_risk_cover_1790134997166.jpg",
+        recommendedRiskMin: 35,
+        theme: "Amber Quantum Circuits & Threat Radar"
+      },
+      {
+        id: "compliant",
+        name: "Post-Quantum Cryptographic Shield",
+        path: "/src/assets/images/compliant_pqc_cover_1790135007316.jpg",
+        recommendedRiskMin: 0,
+        theme: "Emerald Crystal Lattice Security Barrier"
+      },
+      {
+        id: "executive",
+        name: "Aegis Executive Defense Dossier",
+        path: "/src/assets/images/aegis_dossier_cover_1790135019088.jpg",
+        theme: "Classified Sapphire Defense Command Insignia"
+      }
+    ]
+  });
+});
+
+// Incident Report - AI Executive Summary Enhancement
+app.post("/api/report/enhance-summary", async (req, res) => {
+  const { riskScore, vulnerabilities, targetSystem } = req.body;
+  const isCriticalRisk = (riskScore || 0) >= 70;
+  const fallbackSummary = `EXECUTIVE APPRAISAL: A targeted post-quantum cryptographic risk analysis on "${targetSystem || "Target Infrastructure"}" revealed a threat rating of ${riskScore || 85}%. ${isCriticalRisk ? "CRITICAL ACTION MANDATED: Cryptographic assets are vulnerable to Harvest-Now-Decrypt-Later (HNDL) quantum cryptanalysis. Shor's factorization will break asymmetric session keys." : "Moderate exposure detected; transition to hybrid key encapsulation (FIPS 203) recommended."} Immediate migration to NIST standardized post-quantum schemes (ML-KEM, ML-DSA) is ordered per NIST SP 800-224 directives.`;
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.json({ summary: fallbackSummary });
+  }
+
+  try {
+    const prompt = `You are the Chief Cryptographic Security Officer at Aegis Defense Systems.
+Write an authoritative, high-impact 3-4 sentence Executive Summary narrative for an official Incident Report Dossier.
+System: "${targetSystem || "Production Gateway"}"
+Risk Score: ${riskScore}/100
+Vulnerabilities: ${JSON.stringify(vulnerabilities || [])}
+Emphasize NIST SP 800-224 compliance, Shor's algorithm threat, Harvest-Now-Decrypt-Later (HNDL) risk, and mandatory transition to FIPS 203 ML-KEM and FIPS 204 ML-DSA.`;
+
+    const aiCall = getAiClient().models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "You are a senior cryptographic defense auditor writing executive summaries for classified incident reports. Be direct, authoritative, and precise.",
+        temperature: 0.7,
+      }
+    }).catch((err) => {
+      console.warn("AI summary generation error caught:", err.message);
+      return { text: fallbackSummary };
+    });
+
+    const timeoutPromise = new Promise<{ text?: string }>((resolve) => 
+      setTimeout(() => resolve({ text: fallbackSummary }), 2800)
+    );
+
+    const aiResponse = await Promise.race([aiCall, timeoutPromise]);
+    const summaryText = aiResponse.text?.trim() || fallbackSummary;
+    res.json({ summary: summaryText });
+  } catch (error: any) {
+    console.warn("AI summary generation error, falling back to deterministic summary:", error.message);
+    res.json({ summary: fallbackSummary });
+  }
+});
+
+// Incident Report - Custom AI Cover Image Generation Endpoint
+app.post("/api/report/generate-cover", async (req, res) => {
+  const { prompt, riskScore, incidentId } = req.body;
+  const score = riskScore || 50;
+  let fallbackAsset = "/src/assets/images/elevated_risk_cover_1790134997166.jpg";
+  if (score >= 70) {
+    fallbackAsset = "/src/assets/images/critical_breach_cover_1790134985155.jpg";
+  } else if (score < 35) {
+    fallbackAsset = "/src/assets/images/compliant_pqc_cover_1790135007316.jpg";
+  }
+
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const fullPrompt = `Dark futuristic cybersecurity incident report cover artwork, ${prompt || "glowing post-quantum cryptographic shield with cyber telemetry"}, classified dossier aesthetic, 3D render`;
+      
+      const imageCall = getAiClient().models.generateContent({
+        model: "gemini-3.1-flash-lite-image",
+        contents: {
+          parts: [{ text: fullPrompt }]
+        },
+        config: {
+          imageConfig: {
+            aspectRatio: "3:4"
+          }
+        }
+      }).catch((err) => {
+        console.warn("Gemini image call error caught:", err.message);
+        return null;
+      });
+
+      const timeoutPromise = new Promise<any>((resolve) => 
+        setTimeout(() => resolve(null), 3500)
+      );
+
+      const imageResponse = await Promise.race([imageCall, timeoutPromise]);
+
+      if (imageResponse) {
+        for (const part of imageResponse.candidates?.[0]?.content?.parts || []) {
+          if (part.inlineData?.data) {
+            const imageBase64 = `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+            return res.json({ imageBase64, fallbackAsset, success: true });
+          }
+        }
+      }
+    } catch (aiErr: any) {
+      console.warn("Gemini image generation unavailable or requires paid key, falling back to profile asset:", aiErr.message);
+    }
+  }
+
+  res.json({
+    fallbackAsset,
+    success: true,
+    note: "Cover assigned based on vulnerability profile."
+  });
+});
+
+// Custom Advanced Quantum AI Models Registry & Telemetry Endpoint
+app.get("/api/quantum-ai/models", (req, res) => {
+  res.json({
+    status: "ONLINE",
+    engineVersion: "Aegis QML Core v4.0.2",
+    models: [
+      {
+        id: "vqc",
+        name: "AegisVQC",
+        type: "Variational Quantum Neural Network",
+        featureMap: "Angle & Phase Embedding",
+        gradientMethod: "Exact Parameter-Shift Rule",
+        hilbertDimension: "2^N complex amplitudes",
+        cyberUseCase: "Zero-Day Exploit & Key Decapsulation Anomaly Detection"
+      },
+      {
+        id: "qsvm",
+        name: "AegisQSVM",
+        type: "Quantum Support Vector Machine",
+        featureMap: "Second-Order Pauli ZZ-Feature Map",
+        kernel: "Quantum State Fidelity Overlap |<0| U_dagger U |0>|^2",
+        cyberUseCase: "Non-Linear High-Entropy Session Boundary Classification"
+      },
+      {
+        id: "qrc",
+        name: "AegisQRC",
+        type: "Quantum Reservoir Computing",
+        dynamics: "Disordered Transverse-Field Ising Spin Glass Network",
+        readout: "Tikhonov Ridge Regression Closed-Form Solver",
+        cyberUseCase: "Hardware Side-Channel Power Trace & Timing Forecasting"
+      },
+      {
+        id: "qgan",
+        name: "AegisQGAN",
+        type: "Quantum Generative Adversarial Network",
+        generator: "Parameterized Ansatz Latent Superposition",
+        discriminator: "Classical-Quantum Hybrid Evasion Evaluator",
+        cyberUseCase: "Post-Quantum Cryptography (ML-KEM / ML-DSA) Adversarial Stress-Testing"
+      },
+      {
+        id: "vqe",
+        name: "AegisVQE",
+        type: "Variational Quantum Eigensolver for Lattice Cryptanalysis",
+        hamiltonian: "Lattice Shortest Vector Problem (SVP) Ising Spin Model",
+        ansatz: "Hardware-Efficient Rotation & Entanglement Circuit",
+        cyberUseCase: "Post-Quantum Cryptographic Modulus & Lattice Hardness Margin Audit"
+      }
+    ]
+  });
+});
+
+// AI Synthesis & Explanation for Quantum Circuit Telemetry
+app.post("/api/quantum-ai/explain", async (req, res) => {
+  const { modelId, numQubits, layers, expectation, confidence, threatDetected } = req.body;
+
+  let explanation = `Quantum model ${modelId?.toUpperCase() || "AegisVQC"} operating on ${numQubits || 4} qubits with ${layers || 2} variational layers evaluated input telemetry in a ${1 << (numQubits || 4)}-dimensional Hilbert space.`;
+  
+  if (threatDetected) {
+    explanation += ` Expectation value ${expectation ?? 0.85} indicates high non-classical periodicity correlated with active quantum cryptanalysis (confidence: ${Math.round((confidence || 0.95) * 100)}%). Immediate transition to NIST FIPS 203 (ML-KEM-1024) recommended.`;
+  } else {
+    explanation += ` Expectation value ${expectation ?? -0.65} confirms normal distribution consistent with benign TLS 1.3 traffic adhering to post-quantum compliance standards.`;
+  }
+
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const aiClient = getAiClient();
+      const prompt = `You are the Aegis Quantum Defense Engine. Provide a 2-3 sentence technical briefing for a cybersecurity operator.
+Model: ${modelId}
+Qubits: ${numQubits} (Hilbert dimension 2^${numQubits} = ${1 << (numQubits || 4)})
+Verdict: ${threatDetected ? "CRITICAL THREAT DETECTED" : "NOMINAL / SECURE"}
+Confidence: ${Math.round((confidence || 0.95) * 100)}%
+Briefly explain the quantum mechanics rationale (e.g. quantum phase estimation, entanglement entropy, or fidelity overlap) and recommended mitigation.`;
+
+      const aiCall = aiClient.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+      }).catch(err => {
+        console.warn("Gemini quantum explain error caught:", err.message);
+        return null;
+      });
+
+      const timeoutPromise = new Promise<any>((resolve) => setTimeout(() => resolve(null), 3000));
+      const aiResponse = await Promise.race([aiCall, timeoutPromise]);
+      if (aiResponse?.text) {
+        explanation = aiResponse.text.trim();
+      }
+    } catch (err: any) {
+      console.warn("Gemini quantum explain exception:", err.message);
+    }
+  }
+
+  res.json({
+    explanation,
+    status: "SUCCESS"
+  });
 });
 
 // Configure Vite middleware in development, and host static build in production

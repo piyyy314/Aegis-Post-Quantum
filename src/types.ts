@@ -73,3 +73,65 @@ export interface AuditHistoryEntry {
   initialVulnerabilitiesCount: number;
   vulnerabilities: AuditVulnerability[];
 }
+
+export interface VulnerabilityTimelinePoint {
+  id: string;
+  timeOffset: string;
+  timestamp: string;
+  rawTimestamp: number;
+  label: string;
+  riskScore: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  totalVulnerabilities: number;
+  remediatedCount: number;
+  activeAlgorithms: string[];
+  remediatedAlgorithms?: string[];
+  status: "CRITICAL" | "HIGH" | "NOMINAL" | "REMEDIATED";
+  phase: string;
+  eventDescription: string;
+}
+
+export interface HoneypotLogEntry {
+  id: string;
+  timestamp: string;
+  rawTimestamp: number;
+  service: "SSH" | "TELNET" | "WEB" | "SATCOM";
+  port: number;
+  sourceIp: string;
+  sourcePort?: number;
+  action: string;
+  payload?: string;
+  credentials?: { username?: string; password?: string };
+  command?: string;
+  blocked: boolean;
+  firewallRule?: string;
+  severity: "INFO" | "WARN" | "CRITICAL";
+}
+
+export interface FirewallRule {
+  id: string;
+  ip: string;
+  reason: string;
+  firewallTool: "iptables" | "ufw" | "ip-route" | "kernel-socket";
+  commandExecuted: string;
+  executionStatus: "EXECUTED" | "CONTAINER_ENFORCED" | "ACTIVE";
+  bannedAt: string;
+  packetsDropped: number;
+  active: boolean;
+}
+
+export interface HoneypotStatus {
+  sshOnline: boolean;
+  sshPort: number;
+  telnetOnline: boolean;
+  telnetPort: number;
+  webTrapsOnline: boolean;
+  totalConnectionsCaught: number;
+  totalCredentialsHarvested: number;
+  totalMaliciousCommands: number;
+  bannedIpsCount: number;
+  autoBlockEnabled: boolean;
+}
+

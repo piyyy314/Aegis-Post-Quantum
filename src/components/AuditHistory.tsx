@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { 
-  History, Calendar, Trash2, TrendingUp, Activity, CheckCircle2, AlertTriangle, Layers, ArrowLeftRight, Award
+  History, Calendar, Trash2, TrendingUp, Activity, CheckCircle2, AlertTriangle, Layers, ArrowLeftRight, Award, FileText, Sparkles
 } from "lucide-react";
 import { AuditHistoryEntry } from "../types";
 
@@ -10,6 +10,7 @@ interface AuditHistoryProps {
   onClearAll: () => void;
   onRestoreCode: (code: string, snippetName: string) => void;
   onViewActiveScan: () => void;
+  onGenerateReport?: (entry: AuditHistoryEntry) => void;
 }
 
 export function AuditHistory({ 
@@ -17,7 +18,8 @@ export function AuditHistory({
   onRemoveEntry, 
   onClearAll,
   onRestoreCode,
-  onViewActiveScan 
+  onViewActiveScan,
+  onGenerateReport
 }: AuditHistoryProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -347,6 +349,16 @@ export function AuditHistory({
 
                         {/* Interactive actions for this record */}
                         <div className="pt-3 border-t border-white/5 flex flex-wrap gap-2 justify-end">
+                          {onGenerateReport && (
+                            <button
+                              onClick={() => onGenerateReport(item)}
+                              className="bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 text-[#14f7ff] hover:text-white py-1.5 px-3 rounded text-[9.5px] border border-[#14f7ff]/40 cursor-pointer flex items-center gap-1.5 transition-all uppercase font-bold"
+                              title="Generate branded Incident PDF Report for this audit session"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-[#14f7ff]" /> Generate Incident PDF
+                            </button>
+                          )}
+
                           <button
                             onClick={() => onRestoreCode(item.vulnerabilities.length > 0 ? "class ClassicCryptoScheme {\n  // Loaded historic session code\n}" : "class SecureQuantumReady {\n  // Post-quantum verified\n}", item.snippetName)}
                             className="bg-blue-500/5 hover:bg-blue-500/10 text-[#14f7ff] hover:text-white py-1.5 px-3 rounded text-[9.5px] border border-blue-500/25 cursor-pointer flex items-center gap-1.5 transition-all uppercase"

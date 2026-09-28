@@ -3,7 +3,7 @@ import {
   Shield, Activity, Cpu, Zap, Lock, Settings2, Terminal, ArrowRight, 
   Bug, Clock, Radio, FileText, CheckCircle2, AlertOctagon, Loader2, Play, 
   Trash2, ShieldAlert, Award, AlertTriangle, Key, BookOpen, Download, X,
-  Compass, Wifi
+  Compass, Wifi, Flame, Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ThreatMonitor } from "./components/ThreatMonitor";
@@ -12,12 +12,21 @@ import { PalantirDashboard } from "./components/PalantirDashboard";
 import { AuditHistory } from "./components/AuditHistory";
 import { SyntaxHighlightedEditor } from "./components/SyntaxHighlightedEditor";
 import { LinkBudgetCalculator } from "./components/LinkBudgetCalculator";
+import { HoneypotFirewall } from "./components/HoneypotFirewall";
+import { IncidentReportGenerator } from "./components/IncidentReportGenerator";
+import { QuantumAiLab } from "./quantum-ai/components/QuantumAiLab";
 import { PQC_ALGORITHMS, PRELOADED_CODE_SNIPPETS, NIST_MIGRATION_TIMELINE } from "./constants";
 import { AuditResult, AuditVulnerability, AuditHistoryEntry } from "./types";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"command" | "pqc" | "audit" | "roadmap" | "palantir" | "link-budget">("command");
+  const [activeTab, setActiveTab] = useState<"command" | "quantum-ai" | "pqc" | "audit" | "roadmap" | "palantir" | "link-budget" | "honeypot">("command");
   const [totalKeysGenerated, setTotalKeysGenerated] = useState(0);
+
+  // Automated Incident Report Generator states
+  const [isIncidentReportOpen, setIsIncidentReportOpen] = useState(false);
+  const [incidentReportAudit, setIncidentReportAudit] = useState<AuditResult | null>(null);
+  const [incidentReportTargetName, setIncidentReportTargetName] = useState<string>("Production Key Exchange Gateway");
+
   
   // Header telemetry live variables
   const [systemEntropy, setSystemEntropy] = useState(0.000042);
@@ -605,6 +614,13 @@ End of Aegis Autonomous Audit Report.
     URL.revokeObjectURL(url);
   };
 
+  const handleOpenIncidentReport = (customAudit?: AuditResult | null, targetName?: string) => {
+    setIncidentReportAudit(customAudit || auditResult);
+    const snippetName = targetName || (selectedSnippetId ? PRELOADED_CODE_SNIPPETS.find(s => s.id === selectedSnippetId)?.label || "Target Cryptographic Code" : "Production Cryptographic Gateway");
+    setIncidentReportTargetName(snippetName);
+    setIsIncidentReportOpen(true);
+  };
+
   const triggerRecalibration = () => {
     setIsSyncing(true);
     setTimeout(() => {
@@ -721,6 +737,21 @@ End of Aegis Autonomous Audit Report.
         </button>
 
         <button
+          onClick={() => setActiveTab("quantum-ai")}
+          className={`font-mono text-xs uppercase tracking-widest py-1.5 px-4 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === "quantum-ai"
+              ? "bg-gradient-to-r from-cyan-500/25 via-blue-500/25 to-purple-500/25 text-[#14f7ff] border-[#14f7ff] shadow-[0_0_15px_rgba(20,247,255,0.3)] font-bold"
+              : "bg-transparent text-slate-400 border-transparent hover:border-slate-800 hover:text-white"
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-[#14f7ff] animate-pulse" />
+          Quantum AI Models Lab
+          <span className="text-[9px] bg-[#14f7ff]/20 text-[#14f7ff] px-1.5 py-0.2 rounded font-bold ml-1">
+            5 BUILT-IN
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("pqc")}
           className={`font-mono text-xs uppercase tracking-widest py-1.5 px-4 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === "pqc"
@@ -779,7 +810,31 @@ End of Aegis Autonomous Audit Report.
           <Compass className="w-3.5 h-3.5 animate-spin-slow text-[#14f7ff]" />
           Satellite Link Budget
         </button>
+
+        <button
+          onClick={() => setActiveTab("honeypot")}
+          className={`font-mono text-xs uppercase tracking-widest py-1.5 px-4 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === "honeypot"
+              ? "bg-red-500/15 text-red-400 border-red-500/75 shadow-[0_0_10px_rgba(239,68,68,0.25)] font-bold"
+              : "bg-transparent text-slate-400 border-transparent hover:border-slate-800 hover:text-white"
+          }`}
+        >
+          <Flame className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+          Honeypot & Firewall IPS
+        </button>
+
+        <div className="ml-auto flex items-center">
+          <button
+            onClick={() => handleOpenIncidentReport()}
+            className="font-mono text-xs uppercase tracking-wider py-1.5 px-3 rounded-lg border border-[#14f7ff]/60 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 text-[#14f7ff] hover:text-white hover:border-[#14f7ff] transition-all cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(20,247,255,0.2)] font-bold group"
+            title="Generate automated branded PDF Incident Report dossier with AI-generated cover"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#14f7ff] group-hover:rotate-12 transition-transform" />
+            <span>Incident Report Dossier</span>
+          </button>
+        </div>
       </nav>
+
 
       {/* Main Command View Grid */}
       <main className="flex-1 p-6 grid grid-cols-12 gap-6 items-stretch">
@@ -805,6 +860,13 @@ End of Aegis Autonomous Audit Report.
                 <span className="flex items-center gap-1.5 text-emerald-400 font-bold uppercase tracking-wider">
                   Secure
                   <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+                </span>
+              </div>
+              <div className="flex justify-between items-center bg-[#070b1a] p-2.5 rounded border border-white/5">
+                <span className="text-[#14f7ff] font-semibold">Quantum AI Models</span>
+                <span className="flex items-center gap-1.5 text-[#14f7ff] font-bold uppercase tracking-wider">
+                  5 Online
+                  <span className="w-2.5 h-2.5 bg-[#14f7ff] rounded-full shadow-[0_0_8px_rgba(20,247,255,0.6)]"></span>
                 </span>
               </div>
               <div className="flex justify-between items-center bg-[#070b1a] p-2.5 rounded border border-white/5">
@@ -859,6 +921,12 @@ End of Aegis Autonomous Audit Report.
 
           {/* Active Rendering area depending on activeTab */}
           <div className="flex-1">
+            {activeTab === "quantum-ai" && (
+              <div className="animate-fade-in">
+                <QuantumAiLab />
+              </div>
+            )}
+
             {activeTab === "command" && (
               <div className="animate-fade-in">
                 <div className="mb-4 bg-[#0a0f1d] border border-blue-500/15 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -1236,6 +1304,14 @@ End of Aegis Autonomous Audit Report.
                           <h4 className="font-mono text-xs uppercase text-[#14f7ff]/70 font-bold">vulnerability details ledger ({auditResult.vulnerabilities.length})</h4>
                           <div className="flex items-center gap-2">
                             <button
+                              onClick={() => handleOpenIncidentReport(auditResult, selectedSnippetId ? PRELOADED_CODE_SNIPPETS.find(s => s.id === selectedSnippetId)?.label : "Production Cryptographic Gateway")}
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-cyan-500/25 to-blue-500/25 hover:from-cyan-500/40 hover:to-blue-500/40 border border-[#14f7ff] text-[#14f7ff] hover:text-white py-1 px-3 rounded text-[10px] font-mono tracking-wider uppercase font-bold transition-all shadow-[0_0_12px_rgba(20,247,255,0.25)] cursor-pointer"
+                              title="Generate branded Post-Quantum Incident Report PDF with AI-generated cover"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-[#14f7ff] animate-pulse" />
+                              Generate Incident PDF
+                            </button>
+                            <button
                               onClick={handleExportReport}
                               className="flex items-center gap-1.5 bg-[#14f7ff]/10 hover:bg-[#14f7ff]/20 border border-[#14f7ff]/40 hover:border-[#14f7ff] text-[#14f7ff] py-1 px-2.5 rounded text-[10px] font-mono tracking-wider uppercase transition-all shadow-[0_0_8px_rgba(20,247,255,0.05)] cursor-pointer"
                             >
@@ -1320,6 +1396,12 @@ End of Aegis Autonomous Audit Report.
                     onClearAll={handleClearHistory}
                     onRestoreCode={handleRestoreCodeSegment}
                     onViewActiveScan={() => setAuditSubTab("scanner")}
+                    onGenerateReport={(entry) => handleOpenIncidentReport({
+                      isVulnerable: entry.vulnerabilities.length > 0,
+                      overallRiskScore: entry.overallRiskScore,
+                      remediationSummary: `Historical audit record for ${entry.snippetName}. ${entry.vulnerabilities.length} vulnerabilities detected.`,
+                      vulnerabilities: entry.vulnerabilities
+                    }, entry.snippetName)}
                   />
                 </div>
               )}
@@ -1538,7 +1620,26 @@ End of Aegis Autonomous Audit Report.
                 <LinkBudgetCalculator />
               </div>
             )}
+
+            {activeTab === "honeypot" && (
+              <div className="animate-fade-in">
+                <div className="mb-4 bg-[#0a0f1d] border border-red-500/20 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <h2 className="text-sm font-mono font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Flame className="w-4 h-4 text-red-400" />
+                      Dynamic Honeypot Deception & Firewall IPS Engine
+                    </h2>
+                    <p className="text-xs text-slate-400">Live honeypot network with fake SSH (:2222), Telnet (:2323), and Web traps enforcing low-level system firewall (iptables/ufw) bans.</p>
+                  </div>
+                  <span className="bg-red-950 text-red-400 text-[10px] font-mono py-1 px-3 border border-red-800/50 rounded uppercase font-bold text-center animate-pulse shrink-0">
+                    Active IPS Defense
+                  </span>
+                </div>
+                <HoneypotFirewall />
+              </div>
+            )}
           </div>
+
         </section>
       </main>
 
@@ -1610,6 +1711,16 @@ End of Aegis Autonomous Audit Report.
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Autonomous Branded PDF Incident Report Generator Modal */}
+      <IncidentReportGenerator
+        isOpen={isIncidentReportOpen}
+        onClose={() => setIsIncidentReportOpen(false)}
+        auditResult={incidentReportAudit || auditResult}
+        targetSnippetName={incidentReportTargetName}
+        sourceCode={auditCode}
+        auditHistory={auditHistory}
+      />
     </div>
   );
 }

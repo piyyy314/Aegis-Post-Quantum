@@ -135,3 +135,37 @@ export interface HoneypotStatus {
   autoBlockEnabled: boolean;
 }
 
+export interface InspectedPacket {
+  id: string;
+  packetNumber: number;
+  timeOffset: number; // in seconds, formatted e.g. 0.000000
+  timestamp: string;
+  sourceIp: string;
+  sourcePort: number;
+  destIp: string;
+  destPort: number;
+  protocol: "SSHv2" | "TELNET" | "HTTP" | "TCP" | "SATCOM" | "DNS";
+  length: number;
+  tcpFlags: string[];
+  seqNumber: number;
+  ackNumber: number;
+  windowSize: number;
+  threatLevel: "INFO" | "WARN" | "CRITICAL";
+  honeypotService: "SSH" | "TELNET" | "WEB" | "SATCOM" | "TCP_PROBE";
+  info: string;
+  payloadUtf8?: string;
+  rawBytesHex: string;
+  dissectorData: {
+    ethernet: { srcMac: string; destMac: string; ethType: string };
+    ip: { version: number; headerLen: number; ttl: number; protocolNum: number; checksum: string };
+    tcp: { flagsHex: string; options: string };
+    honeypotMetadata: {
+      trapName: string;
+      credentialsCaptured?: { username?: string; password?: string };
+      commandInjected?: string;
+      firewallAction: "BLOCKED_IPTABLES" | "HONEYPOT_DECOY_CAPTURED" | "NOMINAL";
+      mitreAttackTactic: string;
+    };
+  };
+}
+

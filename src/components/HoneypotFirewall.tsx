@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { HoneypotLogEntry, FirewallRule, HoneypotStatus } from "../types";
+import { NetworkPacketInspector } from "./NetworkPacketInspector";
 
 export function HoneypotFirewall() {
   const [logs, setLogs] = useState<HoneypotLogEntry[]>([]);
@@ -45,7 +46,7 @@ export function HoneypotFirewall() {
   });
   const [loading, setLoading] = useState(false);
   const [filterService, setFilterService] = useState<string>("ALL");
-  const [activeSubTab, setActiveSubTab] = useState<"feed" | "firewall" | "simulator">("feed");
+  const [activeSubTab, setActiveSubTab] = useState<"feed" | "firewall" | "simulator" | "inspection">("inspection");
 
   // Custom Ban Form state
   const [customIp, setCustomIp] = useState("");
@@ -405,6 +406,21 @@ export function HoneypotFirewall() {
         {/* Sub tabs */}
         <div className="flex flex-wrap items-center gap-2">
           <button
+            onClick={() => setActiveSubTab("inspection")}
+            className={`px-3.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "inspection"
+                ? "bg-cyan-500/20 border-[#14f7ff] text-[#14f7ff] shadow-[0_0_15px_rgba(20,247,255,0.25)] font-bold"
+                : "bg-[#060a13] border-white/10 text-white/50 hover:text-white"
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5 text-[#14f7ff] animate-pulse" />
+            Packet Inspection
+            <span className="text-[9px] bg-[#14f7ff]/20 text-[#14f7ff] px-1.5 py-0.2 rounded font-bold ml-0.5">
+              WIRESHARK
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab("feed")}
             className={`px-3.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
               activeSubTab === "feed"
@@ -461,6 +477,13 @@ export function HoneypotFirewall() {
           </button>
         </div>
       </div>
+
+      {/* SUB-TAB 0: WIRESHARK NETWORK PACKET INSPECTOR */}
+      {activeSubTab === "inspection" && (
+        <div className="animate-fade-in">
+          <NetworkPacketInspector initialLogs={logs} onFirewallBlock={handleQuickBan} />
+        </div>
+      )}
 
       {/* SUB-TAB 1: LIVE INTERCEPT FEED */}
       {activeSubTab === "feed" && (

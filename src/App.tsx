@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { ThreatMonitor } from "./components/ThreatMonitor";
 import { KeyGenerator } from "./components/KeyGenerator";
+import { PqcBenchmarkTool } from "./components/PqcBenchmarkTool";
 import { PalantirDashboard } from "./components/PalantirDashboard";
 import { AuditHistory } from "./components/AuditHistory";
 import { SyntaxHighlightedEditor } from "./components/SyntaxHighlightedEditor";
@@ -20,6 +21,7 @@ import { AuditResult, AuditVulnerability, AuditHistoryEntry } from "./types";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"command" | "quantum-ai" | "pqc" | "audit" | "roadmap" | "palantir" | "link-budget" | "honeypot">("command");
+  const [pqcSubTab, setPqcSubTab] = useState<"benchmark" | "keygen">("benchmark");
   const [totalKeysGenerated, setTotalKeysGenerated] = useState(0);
 
   // Automated Incident Report Generator states
@@ -943,20 +945,61 @@ End of Aegis Autonomous Audit Report.
             )}
 
             {activeTab === "pqc" && (
-              <div className="animate-fade-in">
-                <div className="mb-4 bg-[#0a0f1d] border border-blue-500/15 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="animate-fade-in space-y-6">
+                <div className="bg-[#0a0f1d] border border-blue-500/15 px-4 py-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div>
-                    <h2 className="text-sm font-mono font-bold text-white uppercase tracking-wider">Quantum-Safe Key Derivation Center</h2>
-                    <p className="text-xs text-slate-400">Solve learning-with-errors equations and calculate public polynomial matrix parameters.</p>
+                    <h2 className="text-sm font-mono font-bold text-white uppercase tracking-wider">
+                      Lattice PQC Sandbox & Benchmarking Center
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Derive quantum-safe keypairs or benchmark latency, memory footprint, and network MTU overhead between NIST PQC algorithms.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="bg-lime-950 text-emerald-400 text-[10px] font-mono py-1 px-3 border border-emerald-800 rounded uppercase font-bold text-right">
-                      Derived: {totalKeysGenerated} Pairs
-                    </span>
+
+                  {/* Sub-tab Switcher & Key counter */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex bg-[#040810] border border-white/10 rounded-lg p-1 font-mono text-[10.5px] select-none shrink-0">
+                      <button
+                        onClick={() => setPqcSubTab("benchmark")}
+                        className={`py-1.5 px-3 rounded-md transition-all cursor-pointer flex items-center gap-1.5 font-bold ${
+                          pqcSubTab === "benchmark"
+                            ? "bg-blue-500/20 text-[#14f7ff] border border-[#14f7ff]/50 shadow-[0_0_8px_rgba(20,247,255,0.2)]"
+                            : "text-slate-400 hover:text-white border border-transparent"
+                        }`}
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        Performance Benchmark
+                        <span className="text-[8.5px] bg-[#14f7ff]/20 text-[#14f7ff] px-1 py-0.2 rounded font-bold ml-0.5">
+                          NEW
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => setPqcSubTab("keygen")}
+                        className={`py-1.5 px-3 rounded-md transition-all cursor-pointer flex items-center gap-1.5 font-bold ${
+                          pqcSubTab === "keygen"
+                            ? "bg-blue-500/20 text-[#14f7ff] border border-[#14f7ff]/50 shadow-[0_0_8px_rgba(20,247,255,0.2)]"
+                            : "text-slate-400 hover:text-white border border-transparent"
+                        }`}
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        Keypair Derivation Sandbox
+                      </button>
+                    </div>
+
+                    {pqcSubTab === "keygen" && (
+                      <span className="bg-lime-950 text-emerald-400 text-[10px] font-mono py-1 px-3 border border-emerald-800 rounded uppercase font-bold text-right shrink-0">
+                        Derived: {totalKeysGenerated} Pairs
+                      </span>
+                    )}
                   </div>
                 </div>
-                {/* Embedded KeyGenerator passing custom session tracking logic */}
-                <KeyGenerator onKeyGenerated={() => setTotalKeysGenerated(prev => prev + 1)} />
+
+                {pqcSubTab === "benchmark" ? (
+                  <PqcBenchmarkTool />
+                ) : (
+                  <KeyGenerator onKeyGenerated={() => setTotalKeysGenerated(prev => prev + 1)} />
+                )}
               </div>
             )}
 

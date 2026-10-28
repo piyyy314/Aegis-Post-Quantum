@@ -475,9 +475,16 @@ ${code}
       }
     });
 
-    const text = response.text || "{}";
-    res.setHeader("Content-Type", "application/json");
-    res.send(text);
+    let text = response.text || "{}";
+    text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    try {
+      const parsed = JSON.parse(text);
+      res.setHeader("Content-Type", "application/json");
+      res.json(parsed);
+    } catch (parseErr) {
+      console.warn("AI response was not valid JSON, returning offline audit fallback.");
+      res.json(runOfflineComplianceAudit(code));
+    }
   } catch (error: any) {
     console.warn("Gemini API quota or network limit reached. Seamlessly utilizing Aegis PQC Compliance Analyzer.");
     try {

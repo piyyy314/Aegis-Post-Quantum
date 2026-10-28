@@ -23,11 +23,14 @@ import {
   Globe,
   Layers,
   Cpu,
-  ArrowRight
+  ArrowRight,
+  Sliders
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { HoneypotLogEntry, FirewallRule, HoneypotStatus } from "../types";
 import { NetworkPacketInspector } from "./NetworkPacketInspector";
+import { PacketFilterPanel, BpfFilterRule, PRESET_BPF_RULES } from "./PacketFilterPanel";
+import { GeographicThreatHeatmap } from "./GeographicThreatHeatmap";
 
 export function HoneypotFirewall() {
   const [logs, setLogs] = useState<HoneypotLogEntry[]>([]);
@@ -46,7 +49,18 @@ export function HoneypotFirewall() {
   });
   const [loading, setLoading] = useState(false);
   const [filterService, setFilterService] = useState<string>("ALL");
-  const [activeSubTab, setActiveSubTab] = useState<"feed" | "firewall" | "simulator" | "inspection">("inspection");
+  const [activeSubTab, setActiveSubTab] = useState<"feed" | "firewall" | "simulator" | "inspection" | "bpf" | "heatmap">("heatmap");
+
+  // BPF Rules State
+  const [bpfRules, setBpfRules] = useState<BpfFilterRule[]>(() => {
+    const now = new Date().toLocaleTimeString();
+    return PRESET_BPF_RULES.map((p, idx) => ({
+      ...p,
+      id: `bpf_${idx + 1}`,
+      createdAt: now,
+      matchedCount: Math.floor(Math.random() * 40) + 12,
+    }));
+  });
 
   // Custom Ban Form state
   const [customIp, setCustomIp] = useState("");
@@ -284,6 +298,42 @@ export function HoneypotFirewall() {
     return log.service === filterService;
   });
 
+  // BPF Rule Handlers
+  const handleAddBpfRule = (ruleData: Omit<BpfFilterRule, "id" | "createdAt" | "matchedCount">) => {
+    const newRule: BpfFilterRule = {
+      ...ruleData,
+      id: `bpf_${Date.now()}`,
+      createdAt: new Date().toLocaleTimeString(),
+      matchedCount: 0,
+    };
+    setBpfRules(prev => [newRule, ...prev]);
+    showToast(`BPF Filter Active: '${newRule.name}' (${newRule.action})`, "success");
+  };
+
+  const handleToggleBpfRule = (id: string) => {
+    setBpfRules(prev =>
+      prev.map(r => (r.id === id ? { ...r, enabled: !r.enabled } : r))
+    );
+  };
+
+  const handleDeleteBpfRule = (id: string) => {
+    setBpfRules(prev => prev.filter(r => r.id !== id));
+    showToast("BPF filter rule removed", "warn");
+  };
+
+  const handleResetBpfRules = () => {
+    const now = new Date().toLocaleTimeString();
+    setBpfRules(
+      PRESET_BPF_RULES.map((p, idx) => ({
+        ...p,
+        id: `bpf_${idx + 1}`,
+        createdAt: now,
+        matchedCount: Math.floor(Math.random() * 40) + 12,
+      }))
+    );
+    showToast("BPF rule presets restored", "success");
+  };
+
   return (
     <div className="space-y-6 font-mono text-xs">
       {/* Toast feedback */}
@@ -406,6 +456,36 @@ export function HoneypotFirewall() {
         {/* Sub tabs */}
         <div className="flex flex-wrap items-center gap-2">
           <button
+            onClick={() => setActiveSubTab("heatmap")}
+            className={`px-3.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "heatmap"
+                ? "bg-gradient-to-r from-red-500/20 to-amber-500/20 border-red-500 text-amber-300 shadow-[0_0_15px_rgba(239,68,68,0.25)] font-bold"
+                : "bg-[#060a13] border-white/10 text-white/50 hover:text-white"
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            Threat Heatmap
+            <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.2 rounded font-bold ml-0.5">
+              GEO MAP
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab("bpf")}
+            className={`px-3.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "bpf"
+                ? "bg-[#14f7ff]/20 border-[#14f7ff] text-[#14f7ff] shadow-[0_0_15px_rgba(20,247,255,0.25)] font-bold"
+                : "bg-[#060a13] border-white/10 text-white/50 hover:text-white"
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5 text-[#14f7ff]" />
+            Packet Filter (BPF)
+            <span className="text-[9px] bg-[#14f7ff]/20 text-[#14f7ff] px-1.5 py-0.2 rounded font-bold ml-0.5">
+              {bpfRules.filter(r => r.enabled).length} ACTIVE
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab("inspection")}
             className={`px-3.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
               activeSubTab === "inspection"
@@ -413,7 +493,7 @@ export function HoneypotFirewall() {
                 : "bg-[#060a13] border-white/10 text-white/50 hover:text-white"
             }`}
           >
-            <Radio className="w-3.5 h-3.5 text-[#14f7ff] animate-pulse" />
+            <Radio className="w-3.5 h-3.5 text-[#14f7ff]" />
             Packet Inspection
             <span className="text-[9px] bg-[#14f7ff]/20 text-[#14f7ff] px-1.5 py-0.2 rounded font-bold ml-0.5">
               WIRESHARK
@@ -477,6 +557,26 @@ export function HoneypotFirewall() {
           </button>
         </div>
       </div>
+
+      {/* SUB-TAB: GEOGRAPHIC THREAT HEATMAP */}
+      {activeSubTab === "heatmap" && (
+        <div className="animate-fade-in">
+          <GeographicThreatHeatmap logs={logs} onFirewallBlock={handleQuickBan} />
+        </div>
+      )}
+
+      {/* SUB-TAB: BPF PACKET FILTER PANEL */}
+      {activeSubTab === "bpf" && (
+        <div className="animate-fade-in">
+          <PacketFilterPanel
+            rules={bpfRules}
+            onAddRule={handleAddBpfRule}
+            onToggleRule={handleToggleBpfRule}
+            onDeleteRule={handleDeleteBpfRule}
+            onResetRules={handleResetBpfRules}
+          />
+        </div>
+      )}
 
       {/* SUB-TAB 0: WIRESHARK NETWORK PACKET INSPECTOR */}
       {activeSubTab === "inspection" && (
